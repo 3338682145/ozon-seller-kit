@@ -1,0 +1,11 @@
+# 绝不入库
+cookie.txt
+cookie.ua
+meta.json
+*.jar
+.env
+**/__pycache__/
+*.pyc
+.DS_Store
+# 大文件
+data/*.json
