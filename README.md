@@ -67,6 +67,17 @@ python3 scripts/collect_seller_p6.py --skus-file skus.txt --period weekly
 p8 的限流是**静默的**：HTTP 仍 200、`items` 变空、延迟反而变快（0.2-0.9s）。
 **空包请求同样计入配额**，所以「并发 + 重试」等于用废票把窗口灌满。详见 `ozon_seller/README.md` 的实测复盘。
 
+## Cookie 保活
+
+`__Secure-token` **无法在客户端续期**（实测不轮换，服务端吊销）。能做的是：
+
+```bash
+python3 scripts/keepalive_seller_cookie.py            # 探一次（129B / 1.1s 的便宜探针）
+bash scripts/install_keepalive_launchd.sh 900         # 每 15 分钟自动心跳
+```
+
+失效时退出码 2，串 `scripts/refresh_seller_cookie.sh` 重签。详见 `ozon_seller/README.md` 的「Cookie 保活」节。
+
 ## 合法使用
 
 这些是卖家后台自己的接口，只能用于**你自己有权限的账号**。频率控制写死在代码里，请勿提高并发。

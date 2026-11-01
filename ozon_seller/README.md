@@ -18,7 +18,7 @@ cookie jar 驱动，**纯 Python HTTP，不需要浏览器常驻**。
 
 ---
 
-## 实测矩阵（2026-10-30，店铺 <seller_id> / <store_name>）
+## 实测矩阵（2026-10-30，店铺 5149811 / Мир игрушек）
 
 | 接口 | 用途 | 纯 HTTP | 单请求延迟 | 并发上限 | 实测吞吐 |
 |---|---|---|---|---|---|
@@ -50,6 +50,95 @@ weekly : sold=74    gmv=258,241   salesDynamics=+52.8%   ← 最近 7 天在反�
 
 对比原 ego-browser 版：p8 约 6 词/分钟（10s/词），1642 词跑 4.5 小时。本地版同样条件约 2 小时，
 而且**能多店铺并行**（每店一套 cookie，各自限流互不影响）。
+
+## Cookie 保活：能做什么、不能做什么（2026-11-01 研究）
+
+### 先给结论
+
+**`__Secure-token` 无法在客户端续期。** 它是「登录发放 → 服务端吊销」模型，不是「到期自动续」。
+所以「本地爬虫拿到 cookie 就能永久保活」这个目标**做不到**；能做的是三件事：
+**降低被吊销概率 + 心跳早发现 + 失效自动重签**。
+
+### 实测证据
+
+**① token 不会自动轮换**
+
+在浏览器里连续做业务请求，前后快照对比全部 cookie：
+
+```
+cookie 数 before/after: 26 / 26
+  abt_data: 值变了 (990 → 984)
+```
+
+只有 `abt_data` 变了，`__Secure-token` / `__Secure-access-token` / `__Secure-refresh-token` **一个字节都没动**。
+说明浏览器自己也没在"续期"，它只是在不断刷新反爬令牌。
+
+**② token 内嵌时间戳**
+
+`__Secure-token` 是点分 10 段，里面有两个 14 位时间戳：
+
+```
+p8.<uid>.<x>.<ab>.<sig>.<ts1>.<ts2>.<v>.<sig2>.<hash>
+                         20261005160308  20261101071628
+```
+
+`ts2` = 签发时刻（与 cookie 落地时间一致）。`ts1` 语义未确认——两份样本间隔分别是 27 天和 10.5 个月，
+不是固定周期，更像签名密钥 epoch 或会话链起点，**不是过期时间**。
+
+**③ 全站请求都不带 Authorization**
+
+页面加载时抓了 23 个请求（含 `/api/role/list`、`/api/v2/company/finance-info`、
+`/api/search-query-analytics/*`），**没有一个带 Authorization 头**。
+认证 100% 走 cookie，所以没有 JWT 那种"换 refresh_token 拿新 access_token"的流程可抄。
+
+**④ 吊销是服务端行为，与 TTL 无关**
+
+| 时刻 | 事件 |
+|---|---|
+| 10-30 09:01 | ego 重签，正常 |
+| 10-30 09:00–10:15 | 高密度调用约 700 请求 / 75 分钟 |
+| 10-30 10:15 | ego 自己被踢到 signin 页；`__Secure-token` 仍在但服务端 401 |
+| 11-01 13:16 | 重签，正常 |
+
+`__Secure-token` 的 cookie TTL 写着 8760 小时（1 年），但实际几小时就被吊销。
+
+### 保活方案（已实现）
+
+**心跳守护** `scripts/keepalive_seller_cookie.py`
+
+用最便宜的鉴权探针 `/api/search-query-analytics/v1/accessibility/enabled_features`
+（**129 字节 / 1.1 秒**，对比 explainer 的 108 条 / 6-16 秒），每 15 分钟打一次：
+
+```bash
+python3 scripts/keepalive_seller_cookie.py            # 探一次
+python3 scripts/keepalive_seller_cookie.py --loop 15  # 常驻
+bash scripts/install_keepalive_launchd.sh 900         # 装 LaunchAgent（已装）
+```
+
+状态写 `~/.config/ozon-seller/health.json`，保留最近 500 条，含每次的延迟/字节数/token 时间戳。
+失效时退出码 2，可以直接串到重签脚本。
+
+**降低吊销概率**
+
+| 措施 | 依据 |
+|---|---|
+| p8 并发固定为 1 | 并发 ≥2 立刻触发静默空包，且空包请求照样计入配额 |
+| p6 并发 ≤3 | 并发 4 连打 102 请求时出现过 5 次 401 |
+| 不同时打 p8 和 p6 | 两接口共用同一份会话配额 |
+| 单日预算上限 | 观察到的吊销都发生在高密度调用之后 |
+
+**失效自动重签**
+
+心跳返回 401 时跑 `bash scripts/refresh_seller_cookie.sh`（需要 ego 里卖家端处于登录态）。
+这条链路 11-01 验证过：401 → 重签 → 探活 200。
+
+### 保活做不到的部分
+
+- **不能靠 refresh_token 续期**：没有这套 OAuth 流程，`__Secure-refresh-token` 是 SSO 层的，不换 seller 域 token
+- **不能阻止服务端吊销**：只能降低概率
+- **长期稳定方案只有官方 API**：`api-seller.ozon.ru` 用 Client-Id + Api-Key，不过期，但**没有这些 analytics 接口**（只有商品/订单/库存/价格）
+
+---
 
 ## 限流实测复盘（2026-10-30 踩坑记录）
 
@@ -232,7 +321,7 @@ POST /api/site/searchteam/Stats/queries/search/by_month
 
 ```json
 POST /api/search-query-analytics/v1/cjm/get-seller-analytics
-{"seller_id":"<seller_id>",
+{"seller_id":"5149811",
  "period_from":"2026-09-30T16:00:00.000Z","period_to":"2026-10-28T15:59:59.999Z",
  "count_total_items":true,"page_number":"0","items_per_page":"500",
  "sort_by":"METRICS_TYPE_UNIQUE_VIEW_USERS","sort_direction":"DESCENDING",
@@ -263,7 +352,7 @@ c = SellerClient()
 rows = c.my_products("2026-09-30T16:00:00.000Z", "2026-10-28T15:59:59.999Z")["skus"]
 ```
 
-实测：店铺 <seller_id> 返回 31 个 SKU，1,974ms。
+实测：店铺 5149811 返回 31 个 SKU，1,974ms。
 
 ---
 
