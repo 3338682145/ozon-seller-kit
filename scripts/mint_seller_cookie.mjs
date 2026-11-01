@@ -2,7 +2,7 @@
 //
 // 用法:
 //   ego-browser nodejs <<'X'
-//     await import('file:///绝对路径/mint_seller_cookie.mjs');
+//     await import('file:///Users/a1234/work/ozon-agent/scripts/mint_seller_cookie.mjs');
 //   X
 //
 // 产物:
@@ -29,7 +29,7 @@ const page = ts.page('p1');
 
 let title = '';
 for (let i = 0; i < 10; i++) {
-  if (i === 0) await page.goto(ENTRY, { waitUntil: 'domcontentloaded', timeout: 90000 }).catch(() => {});
+  if (i === 0) await page.goto(ENTRY, { waitUntil: 'networkidle', timeout: 120000 }).catch(() => {});
   await new Promise((r) => setTimeout(r, 2500));
   title = await page.evaluate(() => document.title).catch(() => '');
   if (/Ozon/i.test(title) && !/нет соединения|Antibot|Доступ ограничен/i.test(title)) break;
@@ -60,6 +60,10 @@ await page.evaluate(() => {
   XMLHttpRequest.prototype.send = function (b) { grab(this.__u, b); return os.apply(this, arguments); };
 });
 
+await page.waitForFunction(
+  () => [...document.querySelectorAll('input')].some((x) => /搜索|Поиск/.test(x.placeholder || '')),
+  { timeout: 45000 },
+).catch(() => console.log('[mint] 等搜索框超时'));
 await page.evaluate(() => {
   const inp = [...document.querySelectorAll('input')].find((x) => (x.placeholder || '').indexOf('搜索') >= 0);
   if (inp) {
@@ -125,13 +129,26 @@ for (const c of applies) {
 
 if (!companyId) { console.log('[mint] 失败：没有 sc_company_id，卖家端未登录'); process.exit(2); }
 
+// uuid 抓不到就复用 meta 里的旧值（实测可跨会话、跨店铺复用）
+let finalUuid = uuid;
+if (!finalUuid) {
+  try {
+    const prev = JSON.parse(fs.readFileSync(META_FILE, 'utf8'));
+    if (prev.uuid) { finalUuid = prev.uuid; console.log('[mint] uuid 未抓到，复用旧值', finalUuid.slice(0, 12) + '…'); }
+  } catch (e) {}
+}
+if (!finalUuid) { console.log('[mint] ⚠ 没有可用 uuid，保持 meta 原值不动'); finalUuid = undefined; }
+if (!finalUuid) console.log('[mint] ⚠ 没有 uuid，p8 explainer 会 400；需在有搜索框的页面手动触发一次');
+
 fs.mkdirSync(DIR, { recursive: true });
 fs.writeFileSync(COOKIE_FILE, Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; '), { mode: 0o600 });
 fs.writeFileSync(UA_FILE, ua, { mode: 0o600 });
+let prevMeta = {};
+try { prevMeta = JSON.parse(fs.readFileSync(META_FILE, 'utf8')); } catch (e) {}
 fs.writeFileSync(META_FILE, JSON.stringify({
   minted_at: new Date().toISOString(),
   company_id: companyId,
-  uuid,
+  uuid: finalUuid !== undefined ? finalUuid : (prevMeta.uuid || null),
   ua,
   entry: ENTRY,
   cookie_count: Object.keys(jar).length,
