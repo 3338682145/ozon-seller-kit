@@ -132,6 +132,28 @@ bash scripts/install_keepalive_launchd.sh 900         # 装 LaunchAgent（已装
 心跳返回 401 时跑 `bash scripts/refresh_seller_cookie.sh`（需要 ego 里卖家端处于登录态）。
 这条链路 11-01 验证过：401 → 重签 → 探活 200。
 
+### 能不能多个浏览器共用一份 token？——能，但 UA 必须一模一样
+
+实测（同一份 cookie，只换 UA 打同一个接口）：
+
+| UA | 结果 |
+|---|---|
+| 原 UA（Chrome 156 macOS，签发时的那个） | **200** |
+| Windows Chrome 156 | **307** |
+| 旧版 Chrome 141 | **307** |
+| Safari 18 | **307** |
+
+**UA 是硬绑定的。** 换任何 UA 都 307（重定向到自身，死循环）。
+
+所以「共用」的真实条件是三条同时满足：
+
+1. **UA 完全一致** —— 第二端必须伪装成签发方的 UA（脚本能设，另一个浏览器不能，除非改 UA）
+2. **带上同一份 `abt_data`** —— 它绑 IP + UA，各浏览器自己生成，混用会出问题
+3. **别在别处登录** —— 多端登录会互踢
+
+结论：**同一个 token 可以被「浏览器 + 脚本」同时用，但不能被「两个不同浏览器」直接用**，
+因为两个浏览器的 UA 必然不同。想在另一台机器用，就把 UA 一起复制过去。
+
 ### 保活做不到的部分
 
 - **不能靠 refresh_token 续期**：没有这套 OAuth 流程，`__Secure-refresh-token` 是 SSO 层的，不换 seller 域 token
