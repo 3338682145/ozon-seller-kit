@@ -1,40 +1,45 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""探活 + 算 __Secure-token 年龄，给 auto_renew_seller_cookie.sh 用
+"""卖家端 cookie 探活（2026-11-01 逆向修正版）
 
-输出一行: <STATUS> <CODE> <AGE_HOURS>
-  OK 200 6.0    可用，token 签发于 6.0 小时前
-  FAIL 401 6.0  鉴权失效
-  NET 0 6.0     网络问题
-  ERR 0 None    jar 读不到
+修正点：
+  · 旧的把 stamps[1] 当 issueTs 且用本地时间(UTC+8)相减 → 恒定输出 ~6h，误判成"8h 轮换"。
+    实测 token 时间戳是 UTC+2，stamps[0]=会话建立，stamps[1]=最后写入。
+  · 实测该接口 200 时不轮换 __Secure-token；所以本探针只回答"还能不能用"。
+
+输出一行: <STATUS> <CODE> <HOURS_SINCE_LAST_SET|None>
+  OK   200 0.1   可用
+  FAIL 401 0.1   鉴权失效（必须重签，没有客户端 refresh 端点）
+  AUTH 403 0.1   abt_data 掉了（同样重签）
+  NET  0   ...   网络问题，别动 cookie
+  THR  429 ...   被限流，别动 cookie
+  ERR  0   None  jar 读不到
 """
 from __future__ import annotations
 
+import json
 import sys
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-
+DIR = Path.home() / ".config" / "ozon-seller"
+STAMP_TZ = timezone(timedelta(hours=2))  # 实测：stamp = cookie_set_utc + 2h
 PROBE = "/api/search-query-analytics/v1/accessibility/enabled_features"
 
 
-def token_age_hours(cookie: str) -> float | None:
-    """__Secure-token 点分 10 段，第 6 段（index 5）是 14 位签发时刻"""
-    for part in cookie.split("; "):
-        if part.startswith("__Secure-token="):
-            segs = part.split("=", 1)[1].split(".")
-            stamps = [x for x in segs if x.isdigit() and len(x) == 14]
-            if len(stamps) >= 2:
-                try:
-                    issued = datetime.strptime(stamps[1], "%Y%m%d%H%M%S")
-                    return round((datetime.now() - issued).total_seconds() / 3600, 1)
-                except ValueError:
-                    return None
-    return None
+def last_set_hours(token: str) -> float | None:
+    stamps = [s for s in token.split(".") if len(s) == 14 and s.isdigit()]
+    if len(stamps) < 2:
+        return None
+    try:
+        last = datetime.strptime(stamps[1], "%Y%m%d%H%M%S").replace(tzinfo=STAMP_TZ)
+    except ValueError:
+        return None
+    return round((datetime.now(timezone.utc) - last).total_seconds() / 3600, 1)
 
 
 def main() -> int:
@@ -42,31 +47,55 @@ def main() -> int:
         from ozon_seller import Jar
         from ozon_seller.api import BASE
         jar = Jar.load()
+        cookie, ua, cid = jar.cookie, jar.ua, jar.company_id
     except Exception:  # noqa: BLE001
-        print("ERR 0 None")
-        return 0
+        # 退路：直接读文件，不依赖包
+        try:
+            cookie = (DIR / "cookie.txt").read_text().strip()
+            ua = (DIR / "cookie.ua").read_text().strip()
+            cid = str(json.loads((DIR / "meta.json").read_text()).get("company_id") or "5149811")
+            BASE = "https://seller.ozon.ru"
+        except Exception:
+            print("ERR 0 None")
+            return 0
 
-    age = token_age_hours(jar.cookie)
-    url = f"{BASE}{PROBE}?sellerId={jar.company_id}&userId=0"
+    tok = ""
+    for p in cookie.split("; "):
+        if p.startswith("__Secure-token="):
+            tok = p.split("=", 1)[1]
+            break
+    hours = last_set_hours(tok)
+
+    url = f"{BASE}{PROBE}?sellerId={cid}&userId=0"
     req = urllib.request.Request(url, headers={
-        "user-agent": jar.ua,
+        "user-agent": ua,
         "accept": "application/json, text/plain, */*",
         "origin": BASE,
         "referer": f"{BASE}/app/analytics-search/search-results/explainer",
         "x-o3-app-name": "seller-ui",
         "x-o3-page-type": "analytics-search",
         "x-o3-language": "zh-Hans",
-        "x-o3-company-id": str(jar.company_id),
-        "cookie": jar.cookie,
+        "x-o3-company-id": str(cid),
+        "cookie": cookie,
     })
     try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            r.read()
-        print(f"OK 200 {age}")
-    except urllib.error.HTTPError as exc:
-        print(f"FAIL {exc.code} {age}")
+        r = urllib.request.urlopen(req, timeout=25)
+        code = r.status
+    except urllib.error.HTTPError as e:
+        code = e.code
     except Exception:  # noqa: BLE001
-        print(f"NET 0 {age}")
+        print(f"NET 0 {hours}")
+        return 0
+
+    if code == 200:
+        print(f"OK 200 {hours}")
+    elif code == 429:
+        print(f"THR 429 {hours}")
+    elif code in (401, 403):
+        # 403 是 abt_data 掉，401 是会话死；两者都只能重签
+        print(f"{'FAIL' if code == 401 else 'AUTH'} {code} {hours}")
+    else:
+        print(f"NET {code} {hours}")
     return 0
 
 
