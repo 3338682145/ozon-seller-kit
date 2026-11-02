@@ -53,3 +53,7 @@ Keyword → Demand Cluster → Product Family → SKU → Seller Offer。
 - P7 ca语义/单位待核；dyn比较基准待核；本版保留raw不擅自解释。
 - [26 P6/P7事实层构建报告](26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md)
 - [P6/P7构建SQL](sql/build_p6_p7_foundation_v1.sql)
+
+
+## 类目GMV交叉核验
+- [27 抗压玩具Ozon后台截图与P6 GMV核验](27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md)：P6 28天Gross GMV约2.482亿 RUB，日均约886.5万 RUB；截图选中日约1,010.8万 RUB，差异约14%，数量级相符。
