@@ -111,3 +111,14 @@ SELECT 'bridge_core_keyword_p7',count(*),count(DISTINCT core_keyword)
 FROM ozon_analytics.bridge_core_keyword_p7 WHERE run_id='p6_p7_foundation_20261102_v1';
 ```
 预期：P6 29,823；P7 9,979；关键词映射1,642。映射精确命中当前560条，其余1,082条保留为NO_EXACT_MATCH，禁止填零。检查P6 redemption NULL和P7 dyn NULL/ca语义警告。
+
+
+## 标准事实层优先级
+- P6商品事实：`ozon_analytics.fact_p6_sku_28d`；抗压玩具优先视图：`v_p6_antistress_28d_v1`。
+- P7需求事实：`ozon_analytics.fact_p7_keyword_28d`；query buyer数不可跨query直接求和。
+- P8货架事实：`ozon_analytics.fact_p8_keyword_sku_108`，仅position 1–108。
+- 关键词市场主题表：`ozon_analytics.mart_keyword_market_base_v1`；抗压玩具可见货架：`v_p8_antistress_top108_v1`。
+- V1词簇桥：`ozon_analytics.bridge_keyword_cluster_v1`。
+- sku_power是snapshot×sku×cluster_id粒度，不是SKU唯一表。
+- 先使用索引化fact/mart/view；避免直接对raw大表重复全表扫描，避免读取历史keyword_sku_detail的JSONB payload。
+- V2相似度候选对通过fact_p8的(sku,keyword)倒排索引批量生成，不能逐个关键词对调用SQL。
