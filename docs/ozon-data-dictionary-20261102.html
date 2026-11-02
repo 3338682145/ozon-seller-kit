@@ -306,43 +306,317 @@
       <div class="meta-row"><span class="meta-key">单次载荷:</span><span class="meta-val">1.3~3.0s | 50 SKU / 包 | 原始 JSON 约 78.4 KB (包含 67 个字段)</span></div>
     </div>
 
-    <h3>1. P6 核心字段字典与口径说明 (67 字段精要)</h3>
-    <table>
-      <thead>
+    <h3>1. P6 核心字段字典：官方 DOM 悬停解释与海鸥备注对照表 (31 项全量)</h3><table><thead><tr><th>字段 Key</th><th>UI 中文表头</th><th>性质</th><th>官方 DOM 悬停解释 (字字对齐) ＋ 生产备注</th></tr></thead><tbody>
         <tr>
-          <th>原始字段名</th>
-          <th>业务中文名</th>
-          <th>数据性质</th>
-          <th>字段定义与业务价值</th>
-          <th>数据样例</th>
+          <td class="mono"><b>sku</b></td>
+          <td><b>商品 SKU ID</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">Ozon 平台商品唯一数字标识，全流程主键。</div>
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">sku</td><td>商品 SKU ID</td><td><span class="tag-raw">原始</span></td><td>Ozon 平台商品唯一数字标识，全流程主键</td><td class="mono">2195937368</td></tr>
-        <tr><td class="mono">name</td><td>商品标题</td><td><span class="tag-raw">原始</span></td><td>俄文标题原文，包含品类与卖点属性</td><td class="mono">Sima-land Anti-Stress Toy</td></tr>
-        <tr><td class="mono">brand / brandId</td><td>品牌名 / 品牌ID</td><td><span class="tag-raw">原始</span></td><td>Ozon 备案品牌；无品牌通常显示为 без бренда</td><td class="mono">без бренда</td></tr>
-        <tr><td class="mono">sellerId / sellerName</td><td>卖家 ID / 店铺名</td><td><span class="tag-raw">原始</span></td><td>销售此商品的卖家凭据，用于聚合头部竞争对手</td><td class="mono">Тура ОПТ</td></tr>
-        <tr><td class="mono">category3 / category3Id</td><td>三级叶子类目</td><td><span class="tag-raw">原始</span></td><td>商品归属叶子类目（选品计算同质度与竞争门槛的核心依据）</td><td class="mono">Антистрессы (92811)</td></tr>
-        <tr><td class="mono">soldCount</td><td>月度总销量</td><td><span class="tag-raw">原始</span></td><td>★ <b>下单口径</b>：28 天统计窗口内被下单的总件数（含未签收/取消单）</td><td class="mono">7693</td></tr>
-        <tr><td class="mono">gmvSum / soldSum</td><td>月度 GMV / 销售额</td><td><span class="tag-raw">原始</span></td><td>★ 28 天买家实付总金额（两者恒等，包含未扣除退款的成交总额）</td><td class="mono">1161506.05 ₽</td></tr>
-        <tr><td class="mono">avgPrice</td><td>买家实付均价</td><td><span class="tag-calc">计算</span></td><td>买家成交件单价（公式：<code>gmvSum / soldCount</code>，误差 &lt; 0.02）</td><td class="mono">150.98 ₽</td></tr>
-        <tr><td class="mono">salesDynamics</td><td>销量环比增幅 %</td><td><span class="tag-raw">原始</span></td><td>相比前一个统计周期的销售变化比例；存在离群值需要进行截断</td><td class="mono">+52.8%</td></tr>
-        <tr><td class="mono">volume</td><td>商品体积 (L)</td><td><span class="tag-raw">原始</span></td><td>★ <b>物流尾程核心</b>：决定 FBO/FBS 扣费档位 (&lt;0.15L: 46₽, 0.15~0.6L: 55₽, ≥0.6L: 80₽)</td><td class="mono">0.0896 L</td></tr>
-        <tr><td class="mono">drr</td><td>广告费比率 %</td><td><span class="tag-raw">原始</span></td><td>★ 广告费 ÷ 销售额；<b>51.9% 的 SKU 为 0，表示未投流，绝不能当空值补</b></td><td class="mono">9.03%</td></tr>
-        <tr><td class="mono">daysWithTrafarets</td><td>带投流天数</td><td><span class="tag-raw">原始</span></td><td>28 天窗口内开启推广的天数（范围 0 ~ 28 天）</td><td class="mono">28</td></tr>
-        <tr><td class="mono">daysInPromo</td><td>促销活动天数</td><td><span class="tag-raw">原始</span></td><td>28 天窗口内参与平台折扣活动的天数（范围 0 ~ 28 天）</td><td class="mono">28</td></tr>
-        <tr><td class="mono">promoRevenueShare</td><td>促销 GMV 占比 %</td><td><span class="tag-raw">原始</span></td><td>促销活动带来的成交额占总 GMV 的比重，越高代表越依赖折扣走量</td><td class="mono">55.4%</td></tr>
-        <tr><td class="mono">nullableRedemptionRate</td><td>订单结单率 %</td><td><span class="tag-raw">原始</span></td><td>★ <b>非退货率</b>：最终正常妥投未取消的订单比率（中位值 90.3%）</td><td class="mono">92.9%</td></tr>
-        <tr><td class="mono">nullableCreateDate</td><td>商品上架日期</td><td><span class="tag-raw">原始</span></td><td>商品在 Ozon 建档的首次日期，用于推算在架天数与新品率</td><td class="mono">2023-09-22T00:00:00Z</td></tr>
-        <tr><td class="mono">minSellerPrice</td><td>最低跟卖价</td><td><span class="tag-raw">原始</span></td><td>⚠ <b>陷阱字段</b>：疑似合并变体中的最低价，约 49% 异常偏低，不能作为单品门槛</td><td class="mono">15.44 ₽</td></tr>
-        <tr><td class="mono">stock / fboStock / fbsStock</td><td>后台申报库存</td><td><span class="tag-raw">原始</span></td><td>卖家在后台填报并处于生效状态的库存快照（分 FBO / FBS 仓）</td><td class="mono">5723</td></tr>
-        <tr><td class="mono">views / qtyViewPdp</td><td>曝光 / 详情页曝光</td><td><span class="tag-raw">原始</span></td><td>商品在搜索列表与详情页中被展示给买家的总人次</td><td class="mono">211464</td></tr>
-        <tr><td class="mono">convToCartPdp / Search</td><td>详情/搜索加购率 %</td><td><span class="tag-raw">原始</span></td><td>详情页浏览到加购、搜索列表直购加购的漏斗转化率</td><td class="mono">17.14% / 1.11%</td></tr>
-        <tr><td class="mono">rating / reviews</td><td>买家评分 / 评价数</td><td><span class="tag-raw">原始</span></td><td>前台累计的用户评分星级与有效评价条数</td><td class="mono">4.9 / 7461</td></tr>
-        <tr><td class="mono">salesSchema</td><td>履约发货模式</td><td><span class="tag-raw">原始</span></td><td>官方仓发货（FBO）或卖家跨境自发货（FBS）</td><td class="mono">FBO</td></tr>
-        <tr><td class="mono">photo</td><td>商品主图 CDN 链接</td><td><span class="tag-raw">原始</span></td><td>Ozon 静态资源图床地址，支持参数化无损升维</td><td class="mono">https://ir-20.ozonstatic.cn/...</td></tr>
-      </tbody>
-    </table>
+        
+        <tr>
+          <td class="mono"><b>name</b></td>
+          <td><b>商品名称</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">买家前台显示的俄文标题原文，包含品类与卖点属性。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>brand / brandId</b></td>
+          <td><b>品牌 / 品牌ID</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">Ozon 登记品牌名。无品牌商品通常显示为 без бренда。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>sellerId / sellerName</b></td>
+          <td><b>卖家 ID / 卖家名称</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">销售此商品的店铺凭据，用于聚合头部竞争对手与统计卖家垄断。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>category3 / category3Id</b></td>
+          <td><b>三级叶子类目</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">商品归属叶子类目（选品计算同质度与竞争门槛的核心依据）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>soldCount</b></td>
+          <td><b>已订购商品</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品订单的总数量，包括取消和退货</div>
+            <div style="color:#4b5563;font-size:12px;">★ 官方明确为「下单口径」：包含后续取消和退货的订单。真实出库净销需乘以认购份额。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>gmvSum / soldSum</b></td>
+          <td><b>订购金额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 订购商品的总价值，包括取消和退货。计算时采用销售价格</div>
+            <div style="color:#4b5563;font-size:12px;">★ 买家实付总金额（两者完全恒等）。计算时采用实际销售价格，含取消/退货。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>avgPrice</b></td>
+          <td><b>平均价格</b></td>
+          <td><span class="tag-calc">计算</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 该期间内商品的平均销售价格</div>
+            <div style="color:#4b5563;font-size:12px;">= gmvSum / soldCount。买家实际成交均价，随平台促销打折实时变动。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>salesDynamics</b></td>
+          <td><b>动态</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 与上一期相比，订单的总金额发生了怎样的变化</div>
+            <div style="color:#4b5563;font-size:12px;">销售额环比增幅 %。存在离群值 (如 +2880%) 需要在计算时做截断。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>volume</b></td>
+          <td><b>商品体积 升</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 根据商品包装后的尺寸自动计算。体积越大，Ozon 仓库的物流和存储成本越高</div>
+            <div style="color:#4b5563;font-size:12px;">★ 决定 FBO/FBS 扣费档位：<0.15L: 46₽, 0.15~0.6L: 55₽, ≥0.6L: 80₽。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>drr</b></td>
+          <td><b>广告费用份额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 推广费用与订购商品价值的比率。统计所有订单，包括取消和退货。计算时以价格上限为准</div>
+            <div style="color:#4b5563;font-size:12px;">★ 51.9% 的商品为 0，代表未投流，绝不能当空值补！以价格上限为准计算。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>daysWithTrafarets</b></td>
+          <td><b>推广天数 按点击付费</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品在搜索结果和推荐中参与按点击付费推广的天数</div>
+            <div style="color:#4b5563;font-size:12px;">28 天窗口内开启推广的天数（范围 0 ~ 28 天）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>daysInPromo</b></td>
+          <td><b>天在促销活动中</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品在该期间内有多少天参与了促销活动</div>
+            <div style="color:#4b5563;font-size:12px;">28 天窗口内参与平台促销活动的天数（范围 0 ~ 28 天）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>promoRevenueShare</b></td>
+          <td><b>促销订单金额占比</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 通过Ozon促销订购的商品价值与所有订购商品总价值的比率。计算时采用销售价格</div>
+            <div style="color:#4b5563;font-size:12px;">促销活动带来的成交额占总 GMV 的比重，越高代表越依赖折扣走量。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>nullableRedemptionRate</b></td>
+          <td><b>认购份额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 未取消且未退回的订购商品百分比</div>
+            <div style="color:#4b5563;font-size:12px;">★ 官方直译为认购份额，实际为「妥投签收率」（中位数 90.3%），非退货率！</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>minSellerPrice</b></td>
+          <td><b>最低价格</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 买家购买该商品的最低销售价格</div>
+            <div style="color:#4b5563;font-size:12px;">⚠ 陷阱字段：约 49% 异常偏低，常为变体中最低 SKU 价，不可直接当做单品门槛。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>sumMissedGmv</b></td>
+          <td><b>已错过销售</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 如果商品有库存，卖家本可赚取的金额。基于日均销量计算</div>
+            <div style="color:#4b5563;font-size:12px;">衡量缺货断货带来的直接潜在损失。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>daysInStock / accessibilityByDays</b></td>
+          <td><b>天无库存</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 我们计算最后28天中商品有多少天有现货</div>
+            <div style="color:#4b5563;font-size:12px;">★ 官方铁证：统计窗口严格为最后 28 天！-1 代表无数据或下架。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>avgGmvOnAccDays</b></td>
+          <td><b>每日平均销量 卢布</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 将FBO和FBS的所有销售额除以商品有库存的天数。我们考虑所有订单，包括取消和退货。计算时采用销售价格</div>
+            <div style="color:#4b5563;font-size:12px;">排除断货天数后的真实日均销售额（GMV/有货天数）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>avgOrdersOnAccDays</b></td>
+          <td><b>每日平均销量 件</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 将FBO和FBS的所有订单数量除以商品有库存的天数。我们考虑所有订单，包括取消和退货</div>
+            <div style="color:#4b5563;font-size:12px;">排除断货天数后的真实日均销售件数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>stock / fboStock / fbsStock</b></td>
+          <td><b>期末库存</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 Ozon 仓库和您自有仓库中可售商品数量。我们按所选周期的最后一天检查库存</div>
+            <div style="color:#4b5563;font-size:12px;">卖家后台填报并生效的库存快照。官方在所选周期的最后一天检查记录。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>salesSchema</b></td>
+          <td><b>工作模式</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 与Ozon的合作模式——取决于从谁的仓库销售商品（Ozon仓库还是卖家仓库）以及谁来配送订单</div>
+            <div style="color:#4b5563;font-size:12px;">FBO（官方仓发）或 FBS（跨境卖家自发货）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>views</b></td>
+          <td><b>展示总计</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品在网站所有页面上的展示次数</div>
+            <div style="color:#4b5563;font-size:12px;">全站所有端点累计曝光人次。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>sessionCountSearch</b></td>
+          <td><b>搜索和目录中的展示次数</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 在搜索结果和目录中的展示次数</div>
+            <div style="color:#4b5563;font-size:12px;">核心自然流量曝光量。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>qtyViewPdp</b></td>
+          <td><b>商品卡片访问量</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 买家进入商品卡片的次数</div>
+            <div style="color:#4b5563;font-size:12px;">详情页独立访客/点击数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>convViewToOrder</b></td>
+          <td><b>展示至下单的转化率</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品在 Ozon 各页面的订单量与展示量的比值</div>
+            <div style="color:#4b5563;font-size:12px;">全流程综合曝光转化率。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>convToCartSearch</b></td>
+          <td><b>搜索至加入购物车的转化率</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 加入购物车次数与在搜索结果中展示次数的比值</div>
+            <div style="color:#4b5563;font-size:12px;">衡量搜索卡片主图与价格的吸引力。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>convToCartPdp</b></td>
+          <td><b>从商品卡片添加至购物车</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品卡片浏览次数与浏览后将商品添加至购物车的数量之间的比例</div>
+            <div style="color:#4b5563;font-size:12px;">衡量商品详情页、评价与属性的购买说服力。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>meanPriceDiscount</b></td>
+          <td><b>从中位价计算的折扣</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 平均折扣是根据您通过促销活动订购的所有商品的中位价格计算的。我们采用用于计算排名提升的中位数价格。计算时采用最高价格</div>
+            <div style="color:#4b5563;font-size:12px;">官方计算排名提升所采用的中位数价格折扣率。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>nullableCreateDate</b></td>
+          <td><b>商品卡片创建日期</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">商品在 Ozon 建档的首次日期，用于推算在架天数与新品率。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>photo</b></td>
+          <td><b>主图 URL</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">Ozon CDN 静态地址，可无损升维到 /wc1200/ 高清 WebP。</div>
+          </td>
+        </tr>
+        </tbody></table>
 
     <h3>2. P6 数据真实性与逻辑检验法则 (如何检验)</h3>
     <div class="callout callout-success">
@@ -374,33 +648,187 @@
       <div class="meta-row"><span class="meta-key">辅助端点:</span><span class="meta-val">POST /api/site/searchstat/Stats/queries/groups (获取 40 个标准化搜索一级类目名)</span></div>
     </div>
 
-    <h3>1. P7 核心字段字典与口径说明 (17 字段)</h3>
-    <table>
-      <thead>
+    <h3>1. P7 核心字段字典：官方 DOM 悬停解释与海鸥备注对照表 (18 项全量)</h3><table><thead><tr><th>字段 Key</th><th>UI 中文表头</th><th>性质</th><th>官方 DOM 悬停解释 (字字对齐) ＋ 生产备注</th></tr></thead><tbody>
         <tr>
-          <th>字段名</th>
-          <th>业务中文名</th>
-          <th>数据性质</th>
-          <th>字段定义与选品逻辑</th>
-          <th>数据样例</th>
+          <td class="mono"><b>query</b></td>
+          <td><b>搜索查询</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">买家在 Ozon 搜索框输入的俄文原词。</div>
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">query</td><td>搜索原词</td><td><span class="tag-raw">原始</span></td><td>买家在搜索框输入的真实搜索词（小写标准化）</td><td class="mono">сквиш лапка</td></tr>
-        <tr><td class="mono">count_28d</td><td>28 天全站搜索频次</td><td><span class="tag-raw">原始</span></td><td>★ 衡量市场基础需求容量（与第三方工具比值 0.996，基准真值）</td><td class="mono">394,585</td></tr>
-        <tr><td class="mono">dyn_7d / dyn_28d</td><td>7天 / 28天搜索趋势 %</td><td><span class="tag-raw">原始</span></td><td>判断词处于爆发期、平稳期还是衰退期的动量指标</td><td class="mono">+14.0% / -4.0%</td></tr>
-        <tr><td class="mono">uniq_sellers</td><td>出单卖家数</td><td><span class="tag-raw">原始</span></td><td>在该词下有实际买家点击购买的去重店铺数</td><td class="mono">13</td></tr>
-        <tr><td class="mono">zr_share</td><td>零结果率 %</td><td><span class="tag-raw">原始</span></td><td>★ <b>蓝海供需缺口</b>：搜了该词但 Ozon 吐不出商品的比例，越高说明供不应求</td><td class="mono">0.1%</td></tr>
-        <tr><td class="mono">no_action_share</td><td>无行为流失率 %</td><td><span class="tag-raw">原始</span></td><td>搜了但买家没有发生任何点击就退出的比率，过高说明词意模糊或结果不匹配</td><td class="mono">26.3%</td></tr>
-        <tr><td class="mono">conv_pct</td><td>搜索购买转化率 %</td><td><span class="tag-raw">原始</span></td><td>全站买家从搜索此词到最终下单的转化比例</td><td class="mono">27.44%</td></tr>
-        <tr><td class="mono">gmv</td><td>全站搜索成交额</td><td><span class="tag-raw">原始</span></td><td>由该词引导产生的所有订单成交金额总和</td><td class="mono">61,053,716 ₽</td></tr>
-        <tr><td class="mono">ord</td><td>成交订单数</td><td><span class="tag-raw">原始</span></td><td>由该词带来的支付订单总笔数</td><td class="mono">114,644</td></tr>
-        <tr><td class="mono">ca</td><td>加购比例 %</td><td><span class="tag-raw">原始</span></td><td>搜索该词后发生加入购物车动作的占比</td><td class="mono">48.77%</td></tr>
-        <tr><td class="mono">items_views</td><td>商品展现数</td><td><span class="tag-raw">原始</span></td><td>搜索结果页为买家呈现的商品平均点击数</td><td class="mono">47</td></tr>
-        <tr><td class="mono">avg_price</td><td>成交均价</td><td><span class="tag-raw">原始</span></td><td>该词下成交商品的平均支付客单价</td><td class="mono">626.0 ₽</td></tr>
-        <tr><td class="mono">group_name</td><td>归属行业分组</td><td><span class="tag-raw">原始</span></td><td>必须严格匹配 40 个官方标准分组之一（如 "Детские товары"）</td><td class="mono">Детские товары</td></tr>
-      </tbody>
-    </table>
+        
+        <tr>
+          <td class="mono"><b>count_28d</b></td>
+          <td><b>搜索查询热门度</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 根据该搜索查询搜索过商品的买家数量</div>
+            <div style="color:#4b5563;font-size:12px;">★ 官方定义为「搜索过该词的买家独立人数」（与 Seerfar 比值 0.996）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>dyn_28d</b></td>
+          <td><b>动态 28天内</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 7天和28天的动态将帮助您更快地对需求产生反应并提高销售 在订阅下可用</div>
+            <div style="color:#4b5563;font-size:12px;">28 天搜索需求环比增减动量趋势 %。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>dyn_7d</b></td>
+          <td><b>动态 7 天内</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 7天和28天的动态将帮助您更快地对需求产生反应并提高销售 在订阅下可用</div>
+            <div style="color:#4b5563;font-size:12px;">7 天短期快速爆发或下跌趋势 %。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>ca</b></td>
+          <td><b>加入购物车</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 从该搜索查询的搜索结果转入并至少向购物车添加了一件商品的买家数量</div>
+            <div style="color:#4b5563;font-size:12px;">该词带来的购物车加购独立买家数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>conv_to_cart</b></td>
+          <td><b>添加到购物车的转化率</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 从该搜索查询的搜索结果转入并至少向购物车添加了一件商品的买家百分比</div>
+            <div style="color:#4b5563;font-size:12px;">搜索转入加购动作的转化比例。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>ord</b></td>
+          <td><b>下单的独立买家数</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 根据该搜索查询从搜索结果中下单的独立买家数量</div>
+            <div style="color:#4b5563;font-size:12px;">通过该搜索词促成实际成交的买家人数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>conv_pct</b></td>
+          <td><b>订单转化率</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 从该搜索查询的搜索结果转入并订购商品的买家百分比</div>
+            <div style="color:#4b5563;font-size:12px;">全站口径的搜索最终成交率。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>gmv</b></td>
+          <td><b>根据该搜索请求已订购金额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 通过搜索结果订购的商品总价值。我们考虑所有订单，包括取消和退货。计算时采用销售价格，并考虑自提点订单处理费用</div>
+            <div style="color:#4b5563;font-size:12px;">该词产生的下单总流水，含取消退货，考虑了自提点处理费。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>avg_price</b></td>
+          <td><b>平均价格</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 商品的平均销售价格，已包含在取货点处理订单的成本</div>
+            <div style="color:#4b5563;font-size:12px;">成交商品的平均客单价。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>items_views</b></td>
+          <td><b>展示的商品数量</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 买家根据该搜索查询浏览的商品平均数量</div>
+            <div style="color:#4b5563;font-size:12px;">买家在该词下平均每次浏览几款商品。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>uniq_sellers</b></td>
+          <td><b>竞争对手</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">参与该词商品曝光并产生出单的独立卖家数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>no_action_share</b></td>
+          <td><b>无操作搜索查询份额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 买家没有点击搜索结果中商品的搜索查询数量百分比</div>
+            <div style="color:#4b5563;font-size:12px;">搜了但买家完全未点击退出的比例，衡量词意偏差或无效词。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>similar_queries</b></td>
+          <td><b>具有类似结果的搜索查询</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 因为相似商品进入了搜索结果而未找到准确匹配商品的搜索查询数量</div>
+            <div style="color:#4b5563;font-size:12px;">未找到精准词但触发相似推荐的频次。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>similar_queries_share</b></td>
+          <td><b>具有类似结果的搜索查询份额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 因为相似商品进入了搜索结果而未找到准确匹配商品的搜索查询数量百分比</div>
+            <div style="color:#4b5563;font-size:12px;">相似推荐占比。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>zr_count</b></td>
+          <td><b>无结果搜索查询</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 未找到任何合适商品的搜索查询数量</div>
+            <div style="color:#4b5563;font-size:12px;">绝对零结果次数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>zr_share</b></td>
+          <td><b>无结果搜索查询份额</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 未找到任何合适商品的搜索查询数量百分比</div>
+            <div style="color:#4b5563;font-size:12px;">★ 蓝海供需缺口黄金指标：搜出来没有商品的比例，越高说明供给严重不足。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>group_name</b></td>
+          <td><b>一级类目分组</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">必须严格匹配官方 40 个标准分组名，否则静默返回 0 条。</div>
+          </td>
+        </tr>
+        </tbody></table>
 
     <h3>2. P7 数据真实性与逻辑检验法则 (如何检验)</h3>
     <div class="callout callout-success">
@@ -432,31 +860,157 @@
       <div class="meta-row"><span class="meta-key">单次载荷:</span><span class="meta-val">251.6 KB | 前 108 个核心搜索位的完整商品卡片、竞价与相关性因子</span></div>
     </div>
 
-    <h3>1. P8 搜索位卡片字段字典 (values 11 列展开)</h3>
-    <table>
-      <thead>
+    <h3>1. P8 搜索位卡片字段字典：官方 DOM 悬停解释与海鸥备注对照表 (15 项全量)</h3><table><thead><tr><th>列位 / 字段 Key</th><th>UI 中文表头</th><th>性质</th><th>官方 DOM 悬停解释 (字字对齐) ＋ 生产备注</th></tr></thead><tbody>
         <tr>
-          <th>列位/字段</th>
-          <th>业务中文名</th>
-          <th>性质</th>
-          <th>说明与排坑注意事项</th>
-          <th>数据样例</th>
+          <td class="mono"><b>position</b></td>
+          <td><b>搜索结果中的位置</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">买家前台搜索呈现的实际坑位顺序（1 ~ 108 名）。</div>
+          </td>
         </tr>
-      </thead>
-      <tbody>
-        <tr><td class="mono">position (col 0)</td><td>自然与广告排位</td><td><span class="tag-raw">原始</span></td><td>买家前台搜索呈现的实际坑位顺序（1 ~ 108 名）</td><td class="mono">1</td></tr>
-        <tr><td class="mono">itemInfo.sku</td><td>排位商品 SKU</td><td><span class="tag-raw">原始</span></td><td>该排位对应的商品 ID，可与 P6 库和买家前台关联</td><td class="mono">5878773535</td></tr>
-        <tr><td class="mono">itemInfo.name</td><td>商品标题</td><td><span class="tag-raw">原始</span></td><td>前台展示的截断标题</td><td class="mono">Антистресс игрушка</td></tr>
-        <tr><td class="mono">itemInfo.sellerName / Id</td><td>卖家名 / 卖家ID</td><td><span class="tag-raw">原始</span></td><td>直观获知该搜索位由哪家店铺占领，用于计算店铺垄断度</td><td class="mono">4571974</td></tr>
-        <tr><td class="mono">promo (col 2)</td><td>推广标记</td><td><span class="tag-raw">原始</span></td><td>是否显示「推广中」徽标；用来计算前 10 位广告位密度</td><td class="mono">推广中</td></tr>
-        <tr><td class="mono">cpc (col 3)</td><td>CPC 竞价出价</td><td><span class="tag-raw">原始</span></td><td>★ 该位卖家投入的点击扣费单价（做目标卡位出价测算的黄金指标）</td><td class="mono">1.01 ₽</td></tr>
-        <tr><td class="mono">popularity (col 5)</td><td>热度/排序分</td><td><span class="tag-raw">原始</span></td><td>⚠ <b>绝非销量！</b>是 Ozon 排序算法的文本与转化权重分，严禁用它算 CR4</td><td class="mono">89.90</td></tr>
-        <tr><td class="mono">rating / reviews (col 6)</td><td>评分 / 评价数</td><td><span class="tag-raw">原始</span></td><td>该位商品买家评分与评价总数；用于评估新人入场追赶难度</td><td class="mono">4.0 / 1 件</td></tr>
-        <tr><td class="mono">price (col 7)</td><td>真实挂牌价</td><td><span class="tag-raw">原始</span></td><td>★ 语义最明确的挂牌销售价，替代买家端混乱的跟卖价</td><td class="mono">234 ₽</td></tr>
-        <tr><td class="mono">deliveryDays (col 10)</td><td>时效履约</td><td><span class="tag-raw">原始</span></td><td>该位商品的预计送达时效</td><td class="mono">2-3 天</td></tr>
-        <tr><td class="mono">relevance</td><td>文本相关度</td><td><span class="tag-dead">死字段</span></td><td>⚠ <b>17.7 万行实测 100% 为 NULL</b>，属于官方已停止填充的废弃字段</td><td class="mono">NULL</td></tr>
-      </tbody>
-    </table>
+        
+        <tr>
+          <td class="mono"><b>itemInfo.sku</b></td>
+          <td><b>商品 SKU</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">该排位对应的商品 ID，可与 P6 及前台关联。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>itemInfo.name</b></td>
+          <td><b>商品名称</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">前台呈现的截断标题。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>itemInfo.sellerId / sellerName</b></td>
+          <td><b>卖家 ID / 卖家名称</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">占领该搜索坑位的店铺名与唯一 ID。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>promo</b></td>
+          <td><b>推广</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 如果其他卖家开通了推广，我们将显示出价和付费模式</div>
+            <div style="color:#4b5563;font-size:12px;">标记该商品是否通过付费广告卡位（BadgeTypeNeutral）。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>generalPopularity</b></td>
+          <td><b>总热门度</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 我们对商品被打开、订购、添加至购物车、收藏夹以及对比的频率进行评估。商品在该搜索查询下越热门，它收到的分数就越多。为了提高指标，请分析竞争对手的商品并使卡片更具吸引力。</div>
+            <div style="color:#4b5563;font-size:12px;">★ 官方铁证：此字段是多维度行为综合打分，绝非销量！严禁用于算 CR4。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>boostingFactors</b></td>
+          <td><b>提升因素</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 可以额外提升商品位置的指标</div>
+            <div style="color:#4b5563;font-size:12px;">包含促销加权、物流速度加权等排名提权系数。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>promotionCpcRate</b></td>
+          <td><b>按点击付费的出价</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 “按点击付费”是用于在搜索结果和推荐中推广商品的工具。在该工具中，您只需为用户在商品投放位置点击商品卡片的行为付费</div>
+            <div style="color:#4b5563;font-size:12px;">★ 卖家投入的每点击出价卢布（如 1.01 ₽），做卡位预算测算的基准。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>promotionCpoRate</b></td>
+          <td><b>按订单付费的出价</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 “按订单付费”是一种工具，可用于将商品推至搜索结果中更高的位置，并展示在推荐货架中。在该工具中，您需为因推广而带来的商品订单支付一定比例的佣金</div>
+            <div style="color:#4b5563;font-size:12px;">按成交抽佣的出价比例。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>textRelevance</b></td>
+          <td><b>与搜索词匹配度</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 我们评估名称、描述和其它字段与查询的符合程度。如要改进：请输入正确的名称以及完整和详细的描述；请在卡片上用有用且相关的信息填写尽可能多的商品特征；请不要填写与商品无关的信息</div>
+            <div style="color:#4b5563;font-size:12px;">★ SEO 优化的核心官方依据：评估标题、描述、属性匹配度。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>reviews</b></td>
+          <td><b>评价</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 如何优化指标：增加评价数量——开通“快速收集评价”；尽量解决买家在评价中提到的问题；搜索引擎工作原理</div>
+            <div style="color:#4b5563;font-size:12px;">该位商品的评分与评价数，衡量新人入场追赶难度。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>price</b></td>
+          <td><b>网站上的价格</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 客户会在网站的产品卡和应用中看到这个价格</div>
+            <div style="color:#4b5563;font-size:12px;">★ 真实前台挂牌销售价格，语义最明确的竞对价格基准。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>salePromotions</b></td>
+          <td><b>来自Ozon的促销活动</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 促销活动可以提升商品在搜索中的位置并通过Ozon的其它板块对商品进行额外推广。位置提升的多少取决于促销活动条件</div>
+            <div style="color:#4b5563;font-size:12px;">该商品是否享受官方促销活动倾斜。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>deliveryPeriod</b></td>
+          <td><b>配送时间</b></td>
+          <td><span class="tag-raw">原始</span></td>
+          <td>
+            <div style="color:#0369a1;font-weight:500;margin-bottom:3px;">💬 我们在搜索结果中对带有快速配送的商品进行额外推广。配送时间越长，商品在搜索结果中的位置就越低。为了提高提升系数，请缩短该地区的配送时间</div>
+            <div style="color:#4b5563;font-size:12px;">物流履约时效对搜索排名的直接加权。</div>
+          </td>
+        </tr>
+        
+        <tr>
+          <td class="mono"><b>relevance</b></td>
+          <td><b>文本相关度</b></td>
+          <td><span class="tag-dead">死字段</span></td>
+          <td>
+            
+            <div style="color:#4b5563;font-size:12px;">⚠ 17.7 万行实测 100% 为 NULL，官方废弃字段。</div>
+          </td>
+        </tr>
+        </tbody></table>
 
     <h3>2. P8 数据真实性与限流熔断法则 (如何检验)</h3>
     <div class="callout callout-danger">
