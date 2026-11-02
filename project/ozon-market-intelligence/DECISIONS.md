@@ -37,3 +37,11 @@
 
 ## ADR-2026-11-02-06：数据与计算口径
 P6 Gross包含取消退货；Net-est按nullableRedemptionRate估算；NULL不填补；P6 salesDynamics是GMV动态；P7 count_28d是独立搜索买家数；P8 position 1–108；CR4是可观测SKU样本；DRR语义已确认但极端值继续QC。RSI不能未经批准修改生产规则或执行采购/投放。
+
+
+## ADR-2026-11-02-07：P6类目范围必须显式过滤
+状态：已根据Supabase实查确认。
+- P6 sku_snapshot_v2为跨类目样本，29,823 SKU覆盖22个category1、378个category3。
+- 当前项目核心类目抗压玩具使用category3_id=92811；本次快照16,039 SKU、28天Gross GMV 248,221,059 RUB。
+- 全P6 1,318,910,734 RUB是混合类目GMV，不得作为抗压玩具市场规模。
+- 后续抗压玩具项目级市场、Entry、CR4、产品族和预测默认过滤category3_id=92811；相邻类目只作替代供给/扩展机会，必须分开报告。
