@@ -97,3 +97,17 @@ ORDER BY created_at DESC;
 
 ## 最终报告必须包含
 数据源与snapshot_id；run_id；公式版本；数据覆盖率；Gross/Net-est规模；CR4 Gross/Net-est；执行耗时；验证结果；异常/缺失；限制；GitHub报告链接；下一步。
+
+
+## P6/P7标准事实层检查SQL
+```sql
+SELECT 'fact_p6_sku_28d' AS table_name,count(*) AS rows,count(DISTINCT sku) AS distinct_entities
+FROM ozon_analytics.fact_p6_sku_28d WHERE run_id='p6_p7_foundation_20261102_v1'
+UNION ALL
+SELECT 'fact_p7_keyword_28d',count(*),count(DISTINCT query)
+FROM ozon_analytics.fact_p7_keyword_28d WHERE run_id='p6_p7_foundation_20261102_v1'
+UNION ALL
+SELECT 'bridge_core_keyword_p7',count(*),count(DISTINCT core_keyword)
+FROM ozon_analytics.bridge_core_keyword_p7 WHERE run_id='p6_p7_foundation_20261102_v1';
+```
+预期：P6 29,823；P7 9,979；关键词映射1,642。映射精确命中当前560条，其余1,082条保留为NO_EXACT_MATCH，禁止填零。检查P6 redemption NULL和P7 dyn NULL/ca语义警告。
