@@ -68,6 +68,17 @@ python3 scripts/collect_seller_p6.py --skus-file skus.txt --period weekly
 p8 的限流是**静默的**：HTTP 仍 200、`items` 变空、延迟反而变快（0.2-0.9s）。
 **空包请求同样计入配额**，所以「并发 + 重试」等于用废票把窗口灌满。详见 `ozon_seller/README.md` 的实测复盘。
 
+## 数据口径
+
+每个字段的来源、算法、已知缺口都写在 [`docs/DATA-VERIFICATION-12-ITEMS.md`](docs/DATA-VERIFICATION-12-ITEMS.md)，
+包含 12 项逐条核查（代码行号 / 实测分布 / 明确标「无出处」的部分）。
+
+要点：
+- **批量看**用 p6 的 `drr`（后台直采的广告费占 GMV 比），够用于筛选
+- **单品精确看**用 p8 explainer 的 `promotionCpcRate`（每位的 CPC 出价）+ `promotionStatus`
+- `CR4` 分母是「108 位里可匹配 p6 的 SKU」，不是全站市场
+- 佣金 23% 是**人工假设**，没有平台出处，不能跨类目复用
+
 ## Cookie 保活
 
 `__Secure-token` **无法在客户端续期**（实测不轮换，服务端吊销）。能做的是：
