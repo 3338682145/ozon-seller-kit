@@ -45,3 +45,15 @@ P6 Gross包含取消退货；Net-est按nullableRedemptionRate估算；NULL不填
 - 当前项目核心类目抗压玩具使用category3_id=92811；本次快照16,039 SKU、28天Gross GMV 248,221,059 RUB。
 - 全P6 1,318,910,734 RUB是混合类目GMV，不得作为抗压玩具市场规模。
 - 后续抗压玩具项目级市场、Entry、CR4、产品族和预测默认过滤category3_id=92811；相邻类目只作替代供给/扩展机会，必须分开报告。
+
+
+## ADR-2026-11-02-08：Supabase分析数据分层和性能规范
+状态：已实施。
+- ozon_raw保持原始字段和快照，不做破坏性清洗；自然键通过复合PK/唯一索引保证。
+- ozon_analytics按事实表、桥表、维度表、主题宽表和查询视图分层；每张事实表必须写明grain。
+- P8 canonical事实表为fact_p8_keyword_sku_108，严格position 1–108，合并P8货架、V1 cluster/ESI和P6 SKU属性。
+- 关键词市场mart一行一个keyword；P6类目份额只基于P8 top108中匹配到P6的SKU，并显式输出coverage。
+- 抗压玩具默认P6过滤category3_id=92811；跨类目数据保留为替代供给，不进入核心分母。
+- sku_power为snapshot×sku×cluster_id粒度，不能按行数统计SKU；cluster_id NULL保留，不伪造填充。
+- 通过复合索引、ANALYZE、倒排SKU索引、批量SQL和聚合后返回优化性能；不把原始大表拉回聊天。
+- 不删除历史宽表/JSONB历史结果；新计算优先使用标准事实层和mart。
