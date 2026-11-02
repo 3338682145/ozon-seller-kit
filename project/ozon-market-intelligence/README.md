@@ -1,6 +1,11 @@
 # Ozon Market Intelligence
 
-版本 v2.1｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
+版本 v1.7｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
+
+## 项目目标
+建立以Ozon市场交易与搜索数据为基础的产品级市场情报系统：识别真实大众需求，将同款SKU归并为产品族，计算市场规模、增速、竞争可进入性、单位经济与新品经营预期，并通过持续回测修正预测。
+
+**决策顺序：需求真实性 → 产品族市场规模 → 可打入性 → 单位经济/ROI → 30–90天预测 → 实际结果回测。**
 
 ## 文档地图
 1. [01 Goal与执行Plan](01-GOAL-AND-PLAN.md)
@@ -19,15 +24,17 @@
 14. [14 P6毛订单与估算妥投净规模试算](14-P6-GROSS-NET-SCALE-TRIAL.md)
 15. [15 165需求簇与1,642关键词Gross/Net规模及双口径CR4](15-MARKET-SCALE-165-1642-2026-11-02.md)
 16. [16 关键词需求簇规则优化提案 v2](16-KEYWORD-CLUSTERING-OPTIMIZATION.md)
-17. [重算脚本](scripts/rebuild_market_scale.py)
+17. [17 Keyword Clustering V2离线实验与验收方案](17-KEYWORD-CLUSTERING-V2-EXPERIMENT-AND-ACCEPTANCE.md)
+18. [重算脚本](scripts/rebuild_market_scale.py)
 
 ## 当前状态
 - [x] L1：165个关键词需求簇
 - [x] L2：簇内SKU去重市场聚合
 - [x] L3：48,898个SKU实体及关键词/簇关联
 - [x] 165簇与1,642关键词Gross/Net-est及双口径CR4重算
+- [x] V2关键词聚类实验规则与验收方案已制定
+- [ ] V2候选关键词对计算、人工标注与Precision/Recall验收
 - [ ] L2a：Exact/Variant/Close产品族和跟卖报价关系
-- [ ] 关键词簇v2离线对照实验、人工标注与Precision/Recall验收
 - [ ] 全量Entry生产流水线
 - [ ] 利润ROI及30–90天预测回测
 
@@ -39,8 +46,13 @@
 - DRR定义已确认，但极端值需要质量控制；单品实际广告费优先广告账单核对。
 - P7 count_28d为独立搜索买家数；跨关键词不可直接相加为独立消费者数。
 
-## 关键词簇优化原则
-现有40%重合规则保留为候选边条件，不直接作为最终聚类规则。v2将增加Jaccard、Top30重合、排名加权相似度、语义/类目约束及Medoid/Complete-Linkage防链式合并；必须先做人工标注与离线验证，不覆盖当前165簇。
+## 关键词簇V2冻结原则
+- 40% = 两关键词共有SKU数 / 较小SKU集合数（Overlap Coefficient），仅作为候选生成条件。
+- 目标为相同搜索意图/需求市场，不等于同款产品族。
+- 每个关键词一个Primary Cluster；允许Secondary关联，但不参与市场加总。
+- V1现有165簇保留为baseline；V2簇数不强制为165。
+- 加入Jaccard、Top30重合、排名加权、SKU IDF、语义/类目约束及Medoid/Complete-Linkage防链式合并。
+- 先完成300对人工标注、Precision/Recall和簇纯度验收，未达标不覆盖V1。
 
 ## 云端归档
 市场规模计算包已存Google Drive，见项目历史同步记录。方法论、计算脚本与审计报告保存在本目录。
