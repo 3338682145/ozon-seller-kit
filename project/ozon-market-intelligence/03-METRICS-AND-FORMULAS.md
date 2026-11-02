@@ -1,69 +1,53 @@
-# 03 — 指标与计算公式
+# 03 — 指标与计算公式（按2026-11-02字段字典修订）
 
 ## 1. 需求与数据质量
-Coverage = n_p6_joined / n_p8_items × 100。必须同时展示分子、分母、join失败原因。
-Homogeneity = 主导三级类目SKU数 / 有效类目SKU数 × 100。
-P7无行为率：>40%进入风险/排除；25–40%观察；<=25%较健康。zero_result_share单独报告。
-关键词CR4 = 按sold_count排序的前4个不同SKU销量 / 该词所有可匹配SKU销量。仅代表p8前108位可观测样本。
+Coverage = n_p6_joined / n_p8_items × 100；必须展示分子、分母和join失败原因。
+Homogeneity = 主导三级类目SKU数 / 有效类目SKU数 ×100。
+P7 no_action_share是搜索后无点击查询占比，不等于假需求；zr_share是未找到合适商品的查询占比，代表潜在供给缺口。两者分开分析。
+P7 count_28d是过去28天搜索过商品的独立买家数，不是搜索次数；ca/ord是加购/下单独立买家数，conv_to_cart/conv_pct是买家比例。跨关键词累加人数可能重复，不得称去重消费者总量。
 
-## 2. 可打入性 Entry Score（优先级最高）
-- max_slot30：position<=30内，单一seller_id占据的不同SKU最大数量。
-- new_top10：top10中上架年龄<60天SKU数 / top10中有效create_date SKU数。
-- p25_top10：top10有效挂牌价的第25百分位数，同时输出有效样本量。
-- seller_id缺失单列unknown_seller_slots，不可当作不同卖家稀释霸屏。
+## 2. P6毛订单与估算妥投净量
+P6 soldCount为28天订购商品件数，含取消和退货；gmvSum/soldSum同样是毛订单金额，含取消和退货。
+r = nullableRedemptionRate / 100。该字段定义为未取消且未退回订单商品占比（成功结单率），不是退货率。
+U_gross = soldCount
+U_net_est = soldCount × r
+P = avgPrice = gmvSum / soldCount
+GMV_net_est = U_net_est × P
 
-B = 1 - MIN(max_slot30/10, 1)
-N = MIN(new_top10/0.40, 1)
+net_est是按毛订单平均价估算的妥投净GMV，不是平台直接给出的最终结算收入；需同时展示gross与net_est，并说明价格结构假设。
+
+## 3. CR4双口径
+CR4_gross = 毛订单销量Top4之和 / 全部可匹配SKU毛订单销量。
+CR4_net_est = 估算妥投净销量Top4之和 / 全部可匹配SKU估算妥投净销量。
+两种口径分别重新排序Top4。分母仅限P8前108位可观测且成功匹配P6的SKU，不是全站完整市场。
+generalPopularity是综合行为热度，不是销量，严禁用于CR4。
+
+## 4. 可打入性
+max_slot30 = position<=30中，按seller_id统计不同SKU数量的最大值。
+new_top10 = top10中上架不足60天且create_date有效的SKU数 / top10中create_date有效的SKU数。
+B = 1 - MIN(max_slot30/10,1)
+N = MIN(new_top10/0.40,1)
 EntryScore = 100 × (0.60×B + 0.40×N)
+注意：字段齐备，但 DATA-VERIFICATION-12-ITEMS 记载原仓库尚未实现可复算生产代码。上线前需补SQL/Python测试和快照日期边界测试。
 
-分档：>=70货架较开放；50–70可测款；30–50进入成本偏高；<30货架壁垒高。max_slot30>5设强警告。p25_top10是价格压力指标，单独展示，不混入核心Entry，以免把价格竞争和货架可进入性混淆。
+## 5. 产品族市场规模
+SKU先通过L2a产品族映射并DISTINCT去重，再分别汇总gross_units、net_units_est、gross_gmv、net_gmv_est、ASP、seller_count、Top1/Top4份额。Exact/close/broad分开。SKU跨多个需求簇可分别参与需求簇分析，但跨簇总市场必须全局去重。
 
-## 3. 机会评分
-OpportunityScore = 0.50×EntryScore + 0.15×DemandScore + 0.10×GrowthScore + 0.15×ProfitScore + 0.05×CoverageScore + 0.05×P7QualityScore。
+## 6. 库存校正
+avgOrdersOnAccDays为含取消/退货的有货日平均毛订单件数；×28可作假设全28天有货时的毛需求运行率。avgGmvOnAccDays同理。它们不是净销量。sumMissedGmv为缺货机会损失，单列，不加入实际GMV。stock/fboStock/fbsStock是周期末后台库存申报值。
+买家端stock_max每日下降可作为库存消耗代理，但补货、仓间调拨、购买上限2000等会干扰，未经校准不能当作真实销售。
 
-DemandScore = 100×MIN(LN(1+P7_count_28d)/LN(1+30000),1)。
-GrowthScore = 100×CLAMP((weighted_growth_28d+20)/120,0,1)。
-CoverageScore = 100×CLAMP(coverage/100,0,1)。
-P7QualityScore = 100×(1-CLAMP(no_action_share/100,0,1))。
+## 7. 增速
+P6 salesDynamics是订单金额动态，不是件数动态。
+P7 dyn_7d/dyn_28d比较基准尚未确认；与Seerfar growth_30d相关但不等值，连续快照验证前只标平台动态指数。
+产品真实净销量增长需要连续同口径P6快照：(本期U_net_est-上期U_net_est)/上期U_net_est。
+旧版sku_weekly仅在确认统计窗口和日期后用于动量特征，不替代真实时间序列。
 
-增长同时展示P7 dyn_7d、dyn_28d与Seerfar growth_30d；Seerfar异常增长评分前截断至100%。市场规模和EntryScore必须单独展示，不允许OpportunityScore替代原始指标。IP明确侵权、数据不可用、no_action_share>40%、严重红海等可设硬否决或人工复核。
+## 8. 单位经济与ROI
+P6 gross GMV含取消/退货，先计算net_est收入，再根据佣金、支付费、物流、广告、采购和包装成本建情景模型。
+DRR定义为推广费用/毛订单价值，分母含取消退货，按价格上限计算；其语义已确认，但极端值需质量控制。drr=0保留为0值，daysWithTrafarets辅助核验。单SKU优先核查P8推广状态和CPC/CPO出价；CPC是出价不是实际扣费。广告真实费用最好以账单对账。
+佣金23%是人工假设，不能跨类目套用。物流按当前有效费率、重量/体积重计算；P6只有volume，重量尺寸需另采。
+redemption_rate不是return_rate；未成功结单的失败原因（取消、拒收、未取件、退货等）需拆分，不能把1-r直接当退货率和逆向物流成本。
 
-## 4. 产品族市场规模
-每个产品族分exact / close / broad三种范围。SKU先去重，再与同一快照p6关联。
-MarketUnits28d = SUM(产品族去重SKU的sold_count)。
-MarketGMV28d = SUM(产品族去重SKU的gmv_sum)。
-MarketASP = MarketGMV28d / MarketUnits28d。
-SellerCount = COUNT(DISTINCT seller_id)。
-SKUShare = SKU.sold_count / MarketUnits28d。
-FamilyCR4 = 产品族内销量前4个SKU销量 / MarketUnits28d。
-Top1Share、Top4Share、SKU数、卖家数、样本覆盖率同时输出。
-
-同SKU出现在多个关键词必须只计一次。不同件数、多件装、颜色或规格如果影响购买决策/价格，保留独立SKU，再汇总到父产品族。exact/close/broad不可混成单一数字。
-
-## 5. 增速与趋势
-有两期同口径p6快照时：SKU growth = (本期sold_count-上期sold_count)/上期sold_count；产品族增速按上期销量加权汇总。GMV、ASP同样分开计算。
-无历史p6时，只报告P7搜索增长和Seerfar需求估算，标注“搜索需求增速”，不得称产品销量增速。
-P7动态字段的统计定义需先确认是环比、同比还是平台动态指数。
-
-## 6. 新品销量预测
-对标样本限定候选关键词top10且产品形态一致，SKU去重。
-ComparableMedian = 合格对标SKU的sold_count中位数；同时输出P25/P75、样本量。
-初始情景系数仅作先验：保守0.15、基准0.27、乐观0.54。0.54是横截面追赶上限，不是承诺。
-ScenarioUnits = ComparableMedian × scenario_factor，并受市场份额上限约束：ForecastUnits = MIN(ScenarioUnits, MarketUnits × share_cap)。初始share_cap可用0.5%/1%/2%作为试验假设，必须回测后校准。
-ForecastGMV = ForecastUnits × MarketASP。
-ForecastProfit = ForecastUnits × UnitProfit。
-样本少于3个时降置信等级；新品预期应以对标样本分位数和历史新品爬坡曲线校准。
-
-## 7. 单位经济、COGS上限与ROI
-统一：P售价RUB，c佣金率，f平台/支付费率，d广告DRR，L跨境运费RUB，label贴标等RUB，C采购CNY，H国内运费包装CNY，E为RUB/CNY。
-
-UnitProfit_RUB = P×(1-c-f-d) - L - label - E×(C+H)。
-UnitMargin = UnitProfit_RUB / P。
-UnitInvestment_CNY = C+H+(L+label)/E + P×(c+f+d)/E。
-ROI = (UnitProfit_RUB/E) / UnitInvestment_CNY ×100%。
-目标利润率m下：COGSmax_CNY = [P×(1-c-f-d-m)-L-label]/E - H。
-
-佣金优先使用真实类目费率。selection-helper-local中的13/15/17价格档是估算，不可当真实佣金。其运费表可复用渠道、实重、体积重、计费档，但2026-04-15费率必须重新核价。不要重复扣除已经包含在GMV/实付价格中的项目。
-
-## 8. 结单率和退货损耗
-在业务定义验证前，模型保留两种情景：A按1-redemption_rate作为未成功结算率；B将其作为更广义未结单率，退货率另设参数。需要明确结单率的分子、分母、订单cohort、是否包含拒收/取消/配送失败。不要把结单率直接作为退货事实字段。
+## 9. 证据与版本
+所有派生字段记录formula_version、computed_at、snapshot_id、源字段与估算标记。官方UI解释、接口实测、工程假设分级保存。
