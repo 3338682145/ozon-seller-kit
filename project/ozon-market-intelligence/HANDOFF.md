@@ -60,3 +60,7 @@ P6毛订单含取消/退货；Net-est按nullableRedemptionRate估算，NULL不�
 
 ## Ozon后台GMV截图核验
 P6 category3_id=92811（抗压玩具）：28天Gross GMV 248,221,059 RUB；Net-est GMV 220,841,423 RUB；日均Gross 8,865,038 RUB。用户截图选中日2026-11-01显示10,107,993 RUB，比P6日均高14.02%，量级相符。截图右侧19,633,483 RUB指标口径不清，未用于核验。详情见27号报告。下一轮如要精确对账，需确认截图日期筛选范围及右侧指标tooltip。
+
+
+## 重要范围修正：P6是跨类目混合池
+P6 sku_snapshot_v2共29,823 SKU，覆盖22个category1和378个category3，并非全是抗压玩具。当前category3_id=92811的抗压玩具只有16,039 SKU（53.78%），28天Gross GMV 248,221,059 RUB（18.82%）；其余13,784 SKU贡献1,070,689,675 RUB Gross GMV（81.18%）。所以此前P6全表13.189亿RUB不得当成抗压玩具大盘。之后项目级核心市场默认筛选category3_id=92811；非抗压类目作为替代/邻近供给另行分析。详情见28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md。
