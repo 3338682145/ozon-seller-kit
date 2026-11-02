@@ -60,3 +60,11 @@
 - 质量审计：`p6_p7_quality_audit` 3行；新建4张表已启用RLS。
 - P7 ca单位与分母存在歧义，本轮仅存ca_raw；dyn比较基准未确认，均不得直接作为正式指标。
 - 可复现SQL：`sql/build_p6_p7_foundation_v1.sql`；报告：[26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md](26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md)。
+
+
+## Ozon后台GMV交叉核验（2026-11-02）
+- 类目：抗压玩具，category3_id=92811。
+- P6 28天：16,039 SKU；Gross GMV 248,221,059 RUB；Net GMV估算220,841,423 RUB；Gross日均8,865,038 RUB。
+- 用户截图选中日显示10,107,993 RUB，较P6日均高14.02%，数量级相符；结论为合理性核验，不是逐日精确对账。
+- 右侧19,633,483 RUB指标统计窗口/定义未确认，暂不用于对账。
+- 详情：[27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md](27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md)。
