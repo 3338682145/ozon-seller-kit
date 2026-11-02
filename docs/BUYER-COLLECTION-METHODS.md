@@ -100,3 +100,31 @@ GET https://www.ozon.ru/api/composer-api.bx/page/json/v2?url=<站点路径>
 2. **前台无直接“已售件数”**：`reviewsCount` 为多年累计评价，绝不能当月销；月销量需由卖家端 P6 补充，或对前台 `stock_max` 做逐日快照差值测算动销。
 3. **评论接口必须按排序置顶**：URL 传入 `score=1` 无效，必须传入 `reviewsVariantMode=2&sort=score_asc` 将 1 星差评置顶，在本地按 `score == 1` 过滤。
 4. **Adult 18+ 弹窗拦截**：情趣内衣等敏感品类遭遇 `userAdultModal` 弹窗时，必须通过 CDP 模拟输入出生日期（如 `01.01.1990`）过检，否则 `tileGridDesktop` 响应为空。
+
+---
+
+## 五、 对标与吸收：`ozon-seller-assistant` 插件取证审计与端口分析
+
+通过对 `ozon-seller-assistant`（v1.7.10 选品核价助手）源码及取证审计文档 (`docs/AUDIT.md`) 的静态逆向分析，其每个商品卡片实际调用的核心端口与接口链路如下：
+
+### 1. 调用的端口与 API 映射全景
+
+| 序号 | 接口端点 (端口路径) | HTTP 方法 | 所属域名 / 权限要求 | 采集数据内容 |
+|---|---|---|---|---|
+| **S3** | `/api/entrypoint-api.bx/page/json/v2?url=/modal/otherOffersFromSellers?product_id=<SKU>&page_changed=true` | GET | `www.ozon.ru` (买家端公开端点 / 会话 Cookie) | **跟卖卖家总数 (`count`)**、所有跟卖商列表、最低跟卖价 (`minPrice`)、最高跟卖价 (`maxPrice`)、币种、每家店铺的 `sellerId`、`sellerName`、跟卖单品 `sku`、实付底价 `price`、买家评分 `rating`、评价数 `reviewsCount`、店铺链接、商品独立落地页、店铺 Logo |
+| **S1** | `/api/site/seller-analytics/what_to_sell/data/v3` | POST | `seller.ozon.ru` (需卖家店铺登录态 Cookie) | 30 天销量 (`soldCount`)、GMV、销售动态、平均售价、加购率、DRR 广告比、投流天数、结单率、体积、曝光量等 27 项后台私有数据 |
+| **S2** | `/api/site/seller-prototype/create-bundle-by-variant-id` | POST | `seller.ozon.ru` (需卖家店铺登录态 Cookie) | 详情补全：根据 `variantId` 反查条形码、包装规格尺寸、毛重、上架时间 |
+| **S4** | `/api/composer-api.bx/_action/v2/addToCart` &rarr; `/cart` &rarr; `deleteItems` | POST/GET | `www.ozon.ru` (需买家账号登录态，写操作) | **商品包装实重**（通过模拟加购物车后读取购物车结算物流重量反推，需要清空购物车，有写入污染风险） |
+| **S6** | `open.er-api.com/v6/latest/CNY` | GET | 外部免认证公共汇率接口 | 人民币对卢布汇率（用于核价面板实时折算） |
+
+### 2. 吸收补充到 `ozon_buyer` 的增强功能
+
+1. **同款跟卖商家数量与最低价 (`webBestSeller`)**：
+   - 在无需请求 modal 弹窗的情况下，直接在 PDP 首屏的 `webBestSeller` 中提取 `count`（跟卖商家数量，如 `112`）与 `minPrice`（如 `"от 193 ₽"`）。
+2. **完整跟卖商名单与工商资质 (`/modal/otherOffersFromSellers`)**：
+   - `BuyerClient.other_offers(sku)` 提取完整跟卖列表：
+     - `count`：跟卖商家总数
+     - `min_price` / `max_price`：价格区间
+     - `sellers[]`：每家跟卖商的 `seller_id`、`seller_name`、`competitor_sku`（跟卖商品独立 SKU）、`price`、`company_name`（营业执照法定公司全称）、`reg_number`（ОГРН/统一代码）、`city`、`country`、`delivery_period`（承诺时效）、`product_url`。
+3. **CLI 综合采集器支持 `--with-offers`**：
+   - 运行 `python3 scripts/collect_buyer.py --sku <SKU> --with-offers` 时，自动抓取并输出跟卖商家数量与名单，直接用于货源对比和被跟卖排查。

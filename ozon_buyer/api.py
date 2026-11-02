@@ -92,7 +92,7 @@ class BuyerClient:
                 break
         return all_items
 
-    def sku_detail(self, sku_id: str | int, include_pdp2: bool = True) -> Dict[str, Any]:
+    def sku_detail(self, sku_id: str | int, include_pdp2: bool = True, with_offers: bool = False) -> Dict[str, Any]:
         """
         抓取单个 SKU 完整商品画像：
         - 标题、价格（Ozon卡价/黑标价/原价）
@@ -101,6 +101,8 @@ class BuyerClient:
         - 属性与短特征 (webCharacteristics)
         - 描述富文本 HTML (webDescription)
         - 卖家信息与大促库存
+        - 同款跟卖商家数量与最低报价 (webBestSeller)
+        - 可选：完整跟卖商名录与工商凭据 (with_offers=True)
         """
         self.ensure_creds()
         sku_str = str(sku_id).strip()
@@ -135,6 +137,14 @@ class BuyerClient:
             except Exception:
                 pass
 
+        # 跟卖卖家详细名录（如需或 PDP 提示有同款）
+        if with_offers or (result.get("other_sellers", {}).get("count") or 0) > 0:
+            offers_data = self.other_offers(sku_str)
+            result["competing_offers"] = offers_data
+            if offers_data.get("count"):
+                result["competing_sellers_count"] = offers_data["count"]
+                result["competing_min_price"] = offers_data.get("min_price")
+
         return result
 
     def sku_reviews(self, sku_id: str | int, pages: int = 1, sort: str = "score_asc") -> Dict[str, Any]:
@@ -145,9 +155,10 @@ class BuyerClient:
         self.ensure_creds()
         return fetch_sku_reviews(str(sku_id), self.creds, proxy=self.proxy, pages=pages, sort=sort)
 
-    def other_offers(self, sku_id: str | int) -> List[Dict[str, Any]]:
+    def other_offers(self, sku_id: str | int, sort: str = "price") -> Dict[str, Any]:
         """
-        抓取跟卖该商品的所有其他卖家（含企业主体全称、ОГРН 注册号、城市、国家、跟卖价格、时效）
+        抓取跟卖该商品的所有其他卖家（含跟卖数量、最低/最高跟卖价、企业主体全称、ОГРН/统一代码、城市、国家、到手报价、时效、独立商品链接）
+        端点: GET /api/entrypoint-api.bx/page/json/v2?url=/modal/otherOffersFromSellers?product_id=<sku>&sort=price
         """
         self.ensure_creds()
         sku_str = str(sku_id).strip()
@@ -158,32 +169,68 @@ class BuyerClient:
             "Referer": "https://www.ozon.ru/",
         }
         proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
-        rel_path = f"/modal/otherOffersFromSellers?product_id={sku_str}&sort=price"
+        rel_path = f"/modal/otherOffersFromSellers?product_id={sku_str}&sort={sort}"
         api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
 
         try:
             resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
             if resp.status_code != 200:
-                return []
+                return {"sku": sku_str, "count": 0, "sellers": [], "error": f"HTTP {resp.status_code}"}
             ws = resp.json().get("widgetStates", {})
             for k, v in ws.items():
                 if "webSellerList" in k:
                     data = json.loads(v) if isinstance(v, str) else v
                     sellers_raw = data.get("sellers") or []
                     extracted = []
+                    prices = []
                     for s in sellers_raw:
-                        cred = s.get("credentials") or {}
+                        cred = s.get("credentials") or []
+                        comp_name, reg_no, city, country = None, None, None, None
+                        if isinstance(cred, list):
+                            if len(cred) > 0: comp_name = cred[0]
+                            if len(cred) > 1: reg_no = cred[1]
+                            if len(cred) > 2: city = cred[2]
+                        elif isinstance(cred, dict):
+                            comp_name = cred.get("name")
+                            reg_no = cred.get("number")
+                            city = cred.get("city")
+                            country = cred.get("country")
+
+                        price_val = parse_num(((s.get("price") or {}).get("cardPrice") or {}).get("price"))
+                        if price_val is None:
+                            price_val = parse_num((s.get("price") or {}).get("price"))
+                        if price_val is not None:
+                            prices.append(price_val)
+
+                        adv = s.get("advantages") or []
+                        delivery_str = None
+                        if adv and isinstance(adv, list):
+                            head = (adv[0].get("contentRs") or {}).get("headRs") or []
+                            if head:
+                                delivery_str = head[0].get("content")
+
                         extracted.append({
-                            "seller_id": s.get("id"),
+                            "seller_id": str(s.get("id")) if s.get("id") else None,
                             "seller_name": s.get("name"),
-                            "company_name": cred.get("name"),
-                            "reg_number": cred.get("number"),  # ОГРН / ОГРНИП / 统一信用代码
-                            "city": cred.get("city"),
-                            "country": cred.get("country"),
-                            "price": parse_num(((s.get("price") or {}).get("cardPrice") or {}).get("price")),
-                            "delivery_period": ((s.get("delivery") or {}).get("period") or {}).get("text"),
+                            "competitor_sku": str(s.get("sku")) if s.get("sku") else None,
+                            "price": price_val,
+                            "product_url": s.get("productLink") or (f"https://www.ozon.ru/product/{s.get('sku')}/" if s.get("sku") else None),
+                            "shop_url": s.get("link") or (f"/seller/{s.get('id')}/" if s.get("id") else None),
+                            "logo_url": s.get("logoImageUrl"),
+                            "cover_image": s.get("coverImage"),
+                            "company_name": comp_name,
+                            "reg_number": reg_no,
+                            "city": city,
+                            "country": country,
+                            "delivery_period": delivery_str,
                         })
-                    return extracted
-        except Exception:
-            return []
-        return []
+                    return {
+                        "sku": sku_str,
+                        "count": len(extracted),
+                        "min_price": min(prices) if prices else None,
+                        "max_price": max(prices) if prices else None,
+                        "sellers": extracted
+                    }
+        except Exception as e:
+            return {"sku": sku_str, "count": 0, "sellers": [], "error": str(e)}
+        return {"sku": sku_str, "count": 0, "sellers": []}
