@@ -12,7 +12,7 @@
 
 ## 核心事实表
 ### fact_sku_snapshot
-sku TEXT、snapshot_date、period_start、period_end、period_days、sold_count、gmv_sum_rub、avg_price_rub、volume_l、weight_g、length_cm、width_cm、height_cm、drr_pct、promo_revenue_share_pct、stock_units、accessibility_days、rating、reviews、create_date、redemption_rate_pct、commission_pct、category3_id、category3、seller_id、brand、source、collected_at、raw_payload_ref。
+sku TEXT、snapshot_date、period_start、period_end、period_days、sold_count、gmv_sum_rub、avg_price_rub、volume_l、weight_g、length_cm、width_cm、height_cm、raw_drr、drr_status、promo_revenue_share_pct、stock_units、accessibility_days、rating、reviews、create_date、redemption_rate_pct、commission_pct、category3_id、category3、seller_id、brand、source、collected_at、raw_payload_ref。
 
 ### fact_keyword_position
 keyword、snapshot_date、position、sku、seller_id、listed_price_rub、cpc_rub、is_promoted、create_date、join_status、missing_reason。
@@ -27,19 +27,22 @@ bridge_family_keyword：family_id、keyword、relevance_score、intent_type、re
 
 ### 成本与预测表
 fact_cost_quote：entity_id、quote_date、valid_until、supplier_url、purchase_cost_cny、MOQ、domestic_shipping_cny、packaging_cny、weight/dimensions、quote_confidence。
-dim_logistics_rate：channel、service_level、tier、base_fee、rate_per_g、volumetric_divisor、weight/value cap、effective dates、source.
+dim_logistics_rate：channel、service_level、tier、base_fee、rate_per_g、volumetric_divisor、weight/value cap、effective dates、source。
 fact_forecast：entity_id、origin_date、horizon_days、model_version、scenario、forecast_units/gmv/profit、lower/upper bound、input snapshot IDs。
 fact_actual_outcome：entity_id、target_date、horizon_days、actual_units/gmv/profit、observed_at、completeness_flag。
 
 ## 字段标准
 - ID存TEXT；金额显式标币种；比例统一0–100，公式中除以100。
 - 体积L、重量g、尺寸cm；时间统一UTC存储。
-- drr=0表示未投放，NULL才表示缺失。
+- drr=0暂不解释为“无投放/自然流量”；NULL与0分开保留。
 - 所有派生字段保留formula_version、computed_at、input_snapshot_id。
 - 保存period_start/end，不能只保存一个模糊的“月销”。
 
+## DRR质量状态：SUSPECT / QUARANTINED
+用户明确指出DRR字段可能存疑。当前原始drr仅可用于展示（带警告）、异常分析和交叉验证；不得作为硬过滤条件，也不得直接进入正式净利润、ROI和COGS上限的单点结果。利润阶段先展示不含广告的基础值，并提供DRR=0/5/10/15%的情景敏感性分析。drr=0语义同样待核验。不得覆盖或删除raw_drr。解除隔离前需确认字段定义、分母、单位、统计窗口，并与真实广告花费及归因GMV抽样对账，解释>100%的异常值及0值语义，经人工审批后方可调整状态。
+
 ## redemption_rate待核验
-用户业务解释为成功结算率，1-redemption_rate可表示未成功结算比例。正式上线前需核实分母是否发货订单、分子是否最终结算订单，以及未结算是否只包含退货，还是也包含取消、拒收、未取件、配送失败。若含多种失败原因，字段命名为non_settlement_rate，不得直接称return_rate。若能取得退款/退货件数及逆向物流费用，应独立建模。
+用户业务解释为成功结算率，1-redemption_rate可表示未成功结算比例。正式上线前需核实分母是否发货订单、分子是否最终结算订单，以及未结算是否只包含退货，还是也包含取消、拒收、未取件、配送失败。若含多种失败原因，字段命名为non_settlement_rate，不得直接称return_rate。若能取得退款/退货件数及逆向物流费用，应独立建模。keyword_seerfar.return_cancel_rate是另一字段，不能与p6 redemption_rate混用。
 
 ## 历史快照
 同一SKU每日或每周追加，不覆盖旧值。P7按query+month+snapshot_date保存。只有同一统计窗口、同一口径的两期数据才能计算增速。
