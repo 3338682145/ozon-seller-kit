@@ -97,3 +97,12 @@ Google Drive用于原始文件和归档；正式计算数据以已导入Supabase
 
 ## 4. 当前已知数据导入状态（运行时必须重新查）
 2026-11-02曾出现部分导入状态：部分raw表已到预期行数，sku_power与sku_snapshot_v2未完成，analytics表为0。由于用户正在上传，每次运行必须重新查COUNT(*)，不能沿用旧状态。
+
+
+## 当前新增P6/P7分析资源（2026-11-02）
+- `ozon_analytics.fact_p6_sku_28d`：P6 SKU×28天标准事实层。
+- `ozon_analytics.fact_p7_keyword_28d`：P7 query×28天标准事实层。
+- `ozon_analytics.bridge_core_keyword_p7`：P8核心关键词到P7 query的精确匹配桥表。
+- `ozon_analytics.p6_p7_quality_audit`：P6/P7行数、唯一性、NULL和语义质量审计。
+- 最新构建run：`p6_p7_foundation_20261102_v1`；启动后先检查该run的状态及上述4张表行数。
+- P7 ca保留raw，语义待核；dyn比较基准未确认。不得把ca当加购人数，或把dyn直接当销量增速。
