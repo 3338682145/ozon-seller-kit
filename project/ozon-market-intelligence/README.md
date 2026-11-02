@@ -44,3 +44,12 @@ Keyword → Demand Cluster → Product Family → SKU → Seller Offer。
 - [17 V2聚类实验验收方案](17-KEYWORD-CLUSTERING-V2-EXPERIMENT-AND-ACCEPTANCE.md)
 - [18 Supabase数据导入记录](18-SUPABASE-RAW-DATA-IMPORT.md)
 - [19 导入器与导入边界](19-SUPABASE-IMPORT-BLOCKER-AND-CLIENT-RUNNER.md)
+
+
+## P6/P7事实层（最新Supabase运行）
+- run_id：`p6_p7_foundation_20261102_v1`，状态completed_with_data_quality_warnings。
+- P6：29,823 SKU；Gross销量3,332,338；Net-est销量2,964,159.549；Gross GMV 1,318,910,734 RUB；Net GMV估算1,140,330,863 RUB。
+- P7：9,979 query；与1,642个核心词精确匹配560个（34.10%），1,082个待规范化映射。
+- P7 ca语义/单位待核；dyn比较基准待核；本版保留raw不擅自解释。
+- [26 P6/P7事实层构建报告](26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md)
+- [P6/P7构建SQL](sql/build_p6_p7_foundation_v1.sql)
