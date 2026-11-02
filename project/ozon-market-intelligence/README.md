@@ -1,11 +1,6 @@
 # Ozon Market Intelligence
 
-版本 v2.0｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
-
-## 项目目标
-建立以Ozon市场交易与搜索数据为基础的产品级市场情报系统：识别真实大众需求，将同款SKU归并为产品族，计算市场规模、增速、竞争可进入性、单位经济与新品经营预期，并通过持续回测修正预测。
-
-**决策顺序：需求真实性 → 产品族市场规模 → 可打入性 → 单位经济/ROI → 30–90天预测 → 实际结果回测。**
+版本 v2.1｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
 
 ## 文档地图
 1. [01 Goal与执行Plan](01-GOAL-AND-PLAN.md)
@@ -23,32 +18,29 @@
 13. [13 项目进度与计算计划](13-PROGRESS-GAPS-AND-CALCULATION-PLAN.md)
 14. [14 P6毛订单与估算妥投净规模试算](14-P6-GROSS-NET-SCALE-TRIAL.md)
 15. [15 165需求簇与1,642关键词Gross/Net规模及双口径CR4](15-MARKET-SCALE-165-1642-2026-11-02.md)
-16. [16 需求簇覆盖率与未归类P6市场规模](16-CLUSTER-COVERAGE-AND-UNASSIGNED-MARKET.md)
-17. [重算脚本：rebuild_market_scale.py](scripts/rebuild_market_scale.py)
-18. [全量计算详细报告与Top 15结果](15-MARKET-SCALE-CALCULATION-2026-11-02.md)
+16. [16 关键词需求簇规则优化提案 v2](16-KEYWORD-CLUSTERING-OPTIMIZATION.md)
+17. [重算脚本](scripts/rebuild_market_scale.py)
 
-## 当前数据与模型状态
-- 数据层：L1 165个需求簇、L2簇-SKU聚合、L3 48,898个SKU实体和多对多桥表已构建；L2a exact/close产品族尚未完成。
-- 市场规模：165簇与1,642关键词的Gross/Net估算销量、Gross/Net GMV和双口径CR4已全量计算；严格使用P8 position 1–108。
-- P6：28天gross下单口径含取消/退货；redemptionRate用于估算妥投净量；P6 salesDynamics是GMV动态。
-- P7：count_28d是独立搜索买家数；dyn基准仍待连续快照验证。
-- DRR：定义已确认，状态SEMANTICS_CONFIRMED / VALUE_QC_REQUIRED；极端值继续质检。
-- Entry：max_slot30/new_top10需完成生产SQL/Python流水线。
-- 利润：佣金、物流重量尺寸、广告账单和未结单失败原因仍缺。
-- 预测：需连续历史快照，30–90天模型尚未回测。
+## 当前状态
+- [x] L1：165个关键词需求簇
+- [x] L2：簇内SKU去重市场聚合
+- [x] L3：48,898个SKU实体及关键词/簇关联
+- [x] 165簇与1,642关键词Gross/Net-est及双口径CR4重算
+- [ ] L2a：Exact/Variant/Close产品族和跟卖报价关系
+- [ ] 关键词簇v2离线对照实验、人工标注与Precision/Recall验收
+- [ ] 全量Entry生产流水线
+- [ ] 利润ROI及30–90天预测回测
 
-## 本次市场计算关键结果
-- 全部P6样本：29,823 SKU；Gross 3,332,338件；Net估算2,964,160件；Gross GMV 1,318,910,734 RUB；Net GMV估算1,140,330,863 RUB。
-- 165簇SKU全局去重并集：19,940个P6 SKU；Gross 1,955,066件；Net估算1,739,904件；Gross GMV 637,117,122 RUB；Net GMV估算559,998,316 RUB。
-- 9,883个P6 SKU未归入任何非空cluster；这些SKU贡献51.69%的P6 Gross GMV，必须作为未归类市场单独分析。
-- 关键词Gross CR4中位数45.61%，Net-est CR4中位数45.44%；需求簇Gross CR4中位数42.76%，Net-est CR4中位数43.35%。
-- 关键词层、簇层均存在SKU重叠；行级加总不可作为全市场规模。
-- 本次排除3条P8 position>108的记录；其中1个关键词“набор сквишей”相对旧版total_sales减少55件，CR4变化0.0283个百分点。
+## 当前市场模型边界
+- P6为28天毛下单口径，含取消/退货；Net-est按nullableRedemptionRate估算，不是最终结算账。
+- P8严格限制position 1–108；CR4仅代表可观测搜索位SKU样本。
+- 关键词/簇之间SKU重叠，跨簇总市场必须全局SKU去重。
+- 165簇之外仍有大量未归类P6 SKU，需独立保留Unclustered市场池。
+- DRR定义已确认，但极端值需要质量控制；单品实际广告费优先广告账单核对。
+- P7 count_28d为独立搜索买家数；跨关键词不可直接相加为独立消费者数。
 
-## 云端数据归档
-完整计算包已同步至Google Drive：
-[ozon-market-scale-2026-11-02-final-v3.zip](https://drive.google.com/file/d/1bFRIRzBzH_pQKw8OTWwmRbuoeCfDMzAo/view)
-文件包含165簇与1,642关键词全量CSV、SKU明细、SQLite分析库、Excel、重算脚本、报告及manifest。SHA256：7e52262585843ce612fddcfbb6cc6fff1d83dd9d0b20032261909f252b2c9686。
+## 关键词簇优化原则
+现有40%重合规则保留为候选边条件，不直接作为最终聚类规则。v2将增加Jaccard、Top30重合、排名加权相似度、语义/类目约束及Medoid/Complete-Linkage防链式合并；必须先做人工标注与离线验证，不覆盖当前165簇。
 
-## 治理红线
-不得把搜索量当销量；不得把generalPopularity当销量；不得把p8前108位样本CR4称为全站CR4；不得跨关键词重复累计SKU；不得将估算净GMV说成平台最终结算收入；不得把1-redemption_rate直接当退货率；不得将CPC出价当实际扣费；不得跨类目套用23%人工佣金假设。RSI不得自动修改生产规则或执行采购/广告动作。
+## 云端归档
+市场规模计算包已存Google Drive，见项目历史同步记录。方法论、计算脚本与审计报告保存在本目录。
