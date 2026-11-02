@@ -8,6 +8,7 @@
 - [DECISIONS.md](DECISIONS.md)
 - [HANDOFF.md](HANDOFF.md)
 - [18-SUPABASE-RAW-DATA-IMPORT.md](18-SUPABASE-RAW-DATA-IMPORT.md)
+- [19-SUPABASE-IMPORT-BLOCKER-AND-CLIENT-RUNNER.md](19-SUPABASE-IMPORT-BLOCKER-AND-CLIENT-RUNNER.md)
 
 目标Supabase project_id：`eohvguguegxbhszvssbd`。PostgreSQL 17.6。已创建ozon_raw、ozon_analytics、ozon_meta三个隔离schema及19张空表。**原始与派生数据仍待客户端COPY导入，不能标为迁移完成。**
 
