@@ -64,3 +64,20 @@ P6 category3_id=92811（抗压玩具）：28天Gross GMV 248,221,059 RUB；Net-e
 
 ## 重要范围修正：P6是跨类目混合池
 P6 sku_snapshot_v2共29,823 SKU，覆盖22个category1和378个category3，并非全是抗压玩具。当前category3_id=92811的抗压玩具只有16,039 SKU（53.78%），28天Gross GMV 248,221,059 RUB（18.82%）；其余13,784 SKU贡献1,070,689,675 RUB Gross GMV（81.18%）。所以此前P6全表13.189亿RUB不得当成抗压玩具大盘。之后项目级核心市场默认筛选category3_id=92811；非抗压类目作为替代/邻近供给另行分析。详情见28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md。
+
+
+## 最新数据结构优化与性能结果（2026-11-02）
+- Raw核心表已建立自然复合主键和查询索引；sku_power仍无传统PK，因为它是snapshot×sku×cluster_id粒度且cluster_id可NULL（66,352行、48,898个SKU、25,593行NULL cluster）。不得将其当作SKU唯一表。
+- P8 curated事实：`ozon_analytics.fact_p8_keyword_sku_108`，177,060行、position 1–108；已join P6 SKU和V1 cluster/ESI字段。
+- Keyword bridge：`bridge_keyword_cluster_v1` 1,642行，1,334 assigned、308 unassigned。
+- Keyword mart：`mart_keyword_market_base_v1` 1,642行，P7 exact match 560条、其余1,082条待规范化映射。
+- 视图：`v_p6_antistress_28d_v1`、`v_p8_antistress_top108_v1`、`v_keyword_market_scope_v1`、`v_sku_cluster_power_source_v1`。
+- P8 top108 P6 match率81.28%；33,146条P8行没有P6 SKU匹配，不能填0销量。
+- 查询计划单词检索约13.6–14.8ms；整体等待还包括工具调用和对话编排。后续SQL尽量批量化、聚合后返回。
+- 详见29号报告和sql/下三个可复用脚本。
+
+## 下一步执行要求
+1. V2相似度必须使用fact_p8_keyword_sku_108倒排SKU索引，按SKU生成共现关键词对，不做逐对SQL请求。
+2. 所有抗压玩具计算默认使用P6 category3_id=92811；关键词scope必须依据P8 top108中P6匹配SKU的类目构成，不将混合词直接标纯抗压玩具。
+3. sku_power任何SKU级统计必须先按SKU去重或按明确规则聚合cluster维度。
+4. 不查询历史keyword_sku_detail的大JSONB payload做日常计算；优先使用标准化fact/mart。
