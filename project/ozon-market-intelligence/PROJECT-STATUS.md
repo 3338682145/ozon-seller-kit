@@ -76,3 +76,14 @@
 - 非抗压玩具：13,784 SKU（46.22%），28天Gross GMV 1,070,689,675 RUB（81.18%）。category3_id无NULL。
 - 因此此前P6总池13.189亿RUB是混合类目GMV，不能称为抗压玩具市场规模。抗压玩具当前可观测28天Gross GMV约2.482亿RUB，Net-est约2.208亿RUB。
 - 后续项目默认scope必须显式限定category3_id=92811；外部类目只作为替代品/相邻市场分析，不并入核心分母。报告：[28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md](28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md)。
+
+
+## 数据库性能与结构优化（2026-11-02）
+- 已为核心raw表建立复合索引，并对10张raw表建立自然复合主键；category按snapshot_id主键。唯一性/NULL检查先通过再加约束。
+- sku_power是唯一保留无传统PK的raw表：66,352行、48,898个SKU、25,593行cluster_id为NULL；实际粒度snapshot×sku×cluster_id，不得按行数当SKU数。
+- 已建立P8标准事实表：ozon_analytics.fact_p8_keyword_sku_108，177,060行、1642关键词，严格position 1–108。
+- 已建立bridge_keyword_cluster_v1（1,642词，1,334已归簇、308未归簇）及mart_keyword_market_base_v1（1,642行）。
+- 已建立类目范围视图：v_p6_antistress_28d_v1、v_p8_antistress_top108_v1、v_keyword_market_scope_v1；另有v_sku_cluster_power_source_v1明确SKU×cluster粒度。
+- P8前108与P6匹配143,917行（81.28%），未匹配33,146行（18.72%）。P7精确匹配560/1,642（34.10%）。
+- 查询计划验证：原始单词P8检索Index Only Scan，108行约13.6ms；curated P8同类查询Index Scan，108行约14.8ms；类目+关键词查询约12.8ms。工具端总等待还包含MCP往返和上下文处理，不能仅归因数据库。
+- 性能/结构报告：[29-DATABASE-PERFORMANCE-AND-STRUCTURE-OPTIMIZATION-2026-11-02.md](29-DATABASE-PERFORMANCE-AND-STRUCTURE-OPTIMIZATION-2026-11-02.md)。SQL：[optimize_raw_schema_indexes_v1.sql](sql/optimize_raw_schema_indexes_v1.sql)、[build_p8_curated_fact_v1.sql](sql/build_p8_curated_fact_v1.sql)、[build_keyword_market_mart_v1.sql](sql/build_keyword_market_mart_v1.sql)。
