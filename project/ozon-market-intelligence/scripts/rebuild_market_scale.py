@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild P6 Gross / Net-est / CR4 market scale from toys.db."""
+"""Rebuild P6 Gross / Net-est / dual CR4 using only P8 positions 1..108."""
 import argparse
 import sqlite3
 from pathlib import Path
@@ -17,12 +17,8 @@ def aggregate(df, group_col):
         net_units = net["net_units_est_28d"].sum()
         gross_gmv = matched["gross_gmv_rub_28d"].sum()
         net_gmv = net["net_gmv_est_rub_28d"].sum()
-        top_gross = matched.sort_values(
-            ["gross_units_28d", "sku"], ascending=[False, True]
-        ).head(4)
-        top_net = net.sort_values(
-            ["net_units_est_28d", "sku"], ascending=[False, True]
-        ).head(4)
+        top_gross = matched.sort_values(["gross_units_28d", "sku"], ascending=[False, True]).head(4)
+        top_net = net.sort_values(["net_units_est_28d", "sku"], ascending=[False, True]).head(4)
         rows.append({
             group_col: key,
             "p8_unique_sku_count": len(g),
@@ -52,16 +48,13 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
 
     con = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
-    bridge = pd.read_sql_query(
-        "SELECT keyword, sku, cluster_id FROM fact_keyword_sku", con
-    )
+    bridge = pd.read_sql_query("SELECT keyword, sku, cluster_id FROM fact_keyword_sku", con)
     p8 = pd.read_sql_query(
         "SELECT keyword, sku, position, seller_id AS seller_id_p8, price AS listed_price_rub "
         "FROM keyword_sku", con
     )
     p6 = pd.read_sql_query(
-        "SELECT sku, sold_count, gmv_sum, avg_price, redemption_rate, seller_id "
-        "FROM sku_snapshot_v2", con
+        "SELECT sku, sold_count, gmv_sum, avg_price, redemption_rate, seller_id FROM sku_snapshot_v2", con
     )
     dim_cluster = pd.read_sql_query("SELECT * FROM dim_cluster", con)
     con.close()
@@ -82,13 +75,20 @@ def main():
         p6["net_units_est_28d"] * pd.to_numeric(p6["avg_price_rub"], errors="coerce")
     )
 
+    # P8's comparable shelf is positions 1..108. Exclude lower positions.
     keyword_rows = bridge.merge(p8, on=["keyword", "sku"], how="left", validate="one_to_one")
+    keyword_rows = keyword_rows[keyword_rows["position"].between(1, 108)].copy()
     keyword_rows = keyword_rows.merge(p6, on="sku", how="left", validate="many_to_one")
     keyword_market = aggregate(keyword_rows, "keyword")
 
-    cluster_rows = bridge.loc[bridge["cluster_id"].notna(), ["cluster_id", "sku"]].drop_duplicates()
+    # Cluster-level SKU union: deduplicate the SKU across all member keywords first.
+    cluster_rows = keyword_rows.loc[
+        keyword_rows["cluster_id"].notna(), ["cluster_id", "sku"]
+    ].drop_duplicates()
     cluster_rows = cluster_rows.merge(p6, on="sku", how="left", validate="many_to_one")
-    cluster_market = dim_cluster[["cluster_id", "name_kw", "n_kw", "total_vol", "avg_g30", "avg_cr4", "avg_homo", "n_sku", "total_sales"]].merge(
+    cluster_market = dim_cluster[
+        ["cluster_id", "name_kw", "n_kw", "total_vol", "avg_g30", "avg_cr4", "avg_homo", "n_sku", "total_sales"]
+    ].merge(
         aggregate(cluster_rows, "cluster_id"), on="cluster_id", how="left", validate="one_to_one"
     )
 
@@ -96,7 +96,8 @@ def main():
     cluster_market.to_csv(out / "cluster_market_165.csv", index=False, encoding="utf-8-sig")
     keyword_rows.to_csv(out / "keyword_sku_detail.csv", index=False, encoding="utf-8-sig")
     cluster_rows.to_csv(out / "cluster_sku_detail.csv", index=False, encoding="utf-8-sig")
-    print(f"wrote {len(keyword_market)} keywords and {len(cluster_market)} clusters")
+    print(f"wrote {len(keyword_market)} keywords, {len(cluster_market)} clusters, "
+          f"{len(keyword_rows)} keyword-SKU rows, {len(cluster_rows)} cluster-SKU rows")
 
 if __name__ == "__main__":
     main()
