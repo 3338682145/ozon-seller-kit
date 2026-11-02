@@ -51,3 +51,20 @@ redemption_rate不是return_rate；未成功结单的失败原因（取消、拒
 
 ## 9. 证据与版本
 所有派生字段记录formula_version、computed_at、snapshot_id、源字段与估算标记。官方UI解释、接口实测、工程假设分级保存。
+
+
+## 10. P6/P7事实层实施口径（2026-11-02）
+Supabase正式事实层：
+- `ozon_analytics.fact_p6_sku_28d`：SKU×28天快照；Gross按raw sold_count，Net-est按gross_units×redemption_rate_pct/100；结单率NULL时Net保持NULL；Net GMV按Net-est件数×P6 avg_price估算。
+- `ozon_analytics.fact_p7_keyword_28d`：query×28天快照；count_28d按query保留独立搜索买家数；跨query不得加总为全市场独立消费者。
+- `ozon_analytics.bridge_core_keyword_p7`：P8核心关键词与P7 query映射；当前只做精确字符串匹配，未匹配不代表零需求。
+- `ozon_analytics.p6_p7_quality_audit`：每次构建的行数、NULL、范围和语义警告。
+
+当前run_id：`p6_p7_foundation_20261102_v1`；source_snapshot_id：`toys_2026_11_02_33e5f029`。
+
+P7语义警告：
+- dyn_7d/dyn_28d的比较基准未核实，保留raw，不作为标准环比或销量增长；本快照各有4个NULL，且存在极端值。
+- ca字段历史解释为加购人数，但当前数据类型为double precision、实际范围0–78.87，存在单位/分母不一致。本版只保存ca_raw，不按人数解释、不求和，待Ozon原生tooltip/接口复核。
+- no_action_share是搜索无点击比例，不等于假需求；zr_share是零结果占比，可作为供给缺口信号。
+
+详见[26-P6-P7事实层构建报告](26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md)。
