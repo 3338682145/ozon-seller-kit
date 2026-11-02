@@ -23,7 +23,7 @@
 - 派生计算SQLite SHA256：`70d6db0a5133c6c484db18453015937b273f1a51d95530274949330dc4033ecc`。
 - 修正版导入包SHA256：`efacb91682cf7ead88de5eca59bf77a37f6fcc0ca83ae59ae9ac79e039e3e7a9`。
 - 修正版导入器SHA256：`1ce79c9667bd47084e885490d0f9170f0239dc9815482aa5f041d1df35c2fb30`。
-- Dry-run预期：原始12表共466,767行；派生4张明细表共177,? rows（另market_scale_summary 39项）。
+- Dry-run预期：原始12表共466,767行；派生4张明细表共219,624 rows（另market_scale_summary 39项，总计219,663条分析记录）。
 
 ## 仍待完成
 1. 通过能够访问Supabase的客户端执行COPY导入；当前会话没有本地到Postgres的文件传输通道。
