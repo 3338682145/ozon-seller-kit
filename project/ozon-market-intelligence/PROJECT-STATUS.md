@@ -50,3 +50,13 @@
 
 ## 红线
 不把本地计算冒充Supabase计算；不覆盖原始快照；不将Net-est说成平台最终结算；不把1-redemptionRate称为退货率；不将CPC出价当实际广告扣费；不把需求簇当同款产品族；未验收V2不得覆盖V1。
+
+
+## 2026-11-02 P6/P7事实层构建完成
+- 新run_id：`p6_p7_foundation_20261102_v1`；状态：completed_with_data_quality_warnings。
+- P6事实表：`ozon_analytics.fact_p6_sku_28d`，29,823行、SKU唯一；Gross销量3,332,338；Net-est销量2,964,159.549；Gross GMV 1,318,910,734.23 RUB；Net GMV估算1,140,330,863.25 RUB；结单率缺失126，Net覆盖率99.5775%。
+- P7事实表：`ozon_analytics.fact_p7_keyword_28d`，9,979行、query唯一，快照2026-10-29；dyn_7d和dyn_28d各4个NULL，极端值保留原值。
+- 核心词映射：`bridge_core_keyword_p7` 1,642行；精确匹配560（34.10%），未精确匹配1,082；未匹配不代表无需求，暂未做模糊匹配。
+- 质量审计：`p6_p7_quality_audit` 3行；新建4张表已启用RLS。
+- P7 ca单位与分母存在歧义，本轮仅存ca_raw；dyn比较基准未确认，均不得直接作为正式指标。
+- 可复现SQL：`sql/build_p6_p7_foundation_v1.sql`；报告：[26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md](26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md)。
