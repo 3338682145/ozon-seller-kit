@@ -2,15 +2,14 @@
 
 更新时间：2026-11-02。正式执行环境：Supabase project eohvguguegxbhszvssbd。当前决策见DECISIONS.md，跨会话入口见HANDOFF.md。
 
-## Supabase真实状态（最新SQL实查）
+## Supabase真实状态（最近一次SQL实查）
 - PostgreSQL 17.6；schema：ozon_raw、ozon_analytics、ozon_meta。
 - 原始12张表全部达到预期行数：合计466,767行，source_snapshot_id=toys_2026_11_02_33e5f029，状态imported_verified。
-- 原始行数：blue_v3 142；category 1；dim_cluster 165；fact_keyword_sku 177,063；keyword_p7 9,979；keyword_score 2,795；keyword_seerfar 1,642；keyword_sku 177,063；product_seerfar 100；query_metrics_v2 1,642；sku_power 66,352；sku_snapshot_v2 29,823。
-- 历史分析结果上传正在进行。最近核验：cluster_market_165=165；keyword_market_1642=1,642；cluster_sku_detail=24,000/40,757；keyword_sku_detail=0/177,060；market_scale_summary=0/39。行数可能随用户上传继续变化。
-- 上述历史分析表关联run_id=market_scale_v2_2026_11_02_70d6db0a，状态partial_historical_analytics_import；不能当作完整导入或新一轮Supabase重算。
-- 元数据表：source_snapshots、calculation_runs、project_context、decision_log、prompt_registry、run_events、artifact_registry、human_labels。
-- OMI-SYSTEM-1.0已注册prompt_registry；project_context active keys=8（含当前导入状态）。
-- 6张新增元数据表启用RLS；三个业务schema对anon/authenticated无USAGE权限。旧业务表RLS仍需后续纵深审查。
+- 原始表唯一键检查通过：sku_snapshot_v2 29,823/29,823；keyword_sku的(keyword,sku) 177,063/177,063；fact_keyword_sku的(keyword,sku) 177,063/177,063。
+- 历史分析结果上传进度：cluster_market_165=165/165；keyword_market_1642=1,642/1,642；cluster_sku_detail=40,757/40,757；keyword_sku_detail=12,000/177,060（上传中）；market_scale_summary=0/39（未上传）。
+- 历史分析run_id=market_scale_v2_2026_11_02_70d6db0a，状态partial_historical_analytics_import。计数可能随上传变化，下一次运行必须重新查询。
+- OMI-SYSTEM-1.0已注册Supabase prompt_registry；project_context保存当前目标、执行环境、实体层级、V2决策、资源清单、上下文恢复顺序和导入状态。
+- 元数据表：source_snapshots、calculation_runs、project_context、decision_log、prompt_registry、run_events、artifact_registry、human_labels。新增6张上下文表已启用RLS；三个业务schema对anon/authenticated无USAGE权限。
 
 ## 系统架构文档
 - [20-MASTER-SYSTEM-PROMPT.md](20-MASTER-SYSTEM-PROMPT.md)
@@ -21,9 +20,11 @@
 
 ## 项目建设状态
 - [x] 原始12张表上传并逐表行数核验。
+- [x] 原始核心唯一键检查通过。
 - [x] 系统提示词、运行资源清单、上下文持久化机制建立。
 - [x] Supabase元数据上下文表建立并写入当前决策。
-- [ ] 历史计算结果明细上传完成并对账。
+- [x] 两张市场汇总表及cluster_sku_detail历史明细上传完成。
+- [ ] keyword_sku_detail历史明细上传完成；market_scale_summary上传。
 - [ ] 在Supabase创建新run_id，重新计算165簇/1,642关键词Gross、Net-est、GMV及双口径CR4。
 - [ ] V2候选相似度、人工标注和验收。
 - [ ] L2a精准同款/变体/跟卖Offer关系。
