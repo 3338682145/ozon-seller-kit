@@ -2,6 +2,17 @@
 
 版本 v1.7｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
 
+## 当前执行入口（2026-11-02更新）
+
+**用户已指定：后续正式数据计算在Supabase执行，GitHub保存进度、决策和handoff。**
+
+- [PROJECT-STATUS.md](PROJECT-STATUS.md)：实际进度和阻塞。
+- [DECISIONS.md](DECISIONS.md)：Supabase执行环境决策及历史方案替代关系。
+- [HANDOFF.md](HANDOFF.md)：下一轮执行入口、数据源、验收规则和安全边界。
+- [只读环境核验SQL](sql/verify_supabase_target.sql)。
+
+连接已验证；本批Ozon数据的云端导入、对账和重算尚未完成。下列已勾选成果属于历史版本，不表示已在Supabase重跑。此前本地计算架构建议由DECISIONS中的最新决定替代。
+
 ## 项目目标
 建立以Ozon市场交易与搜索数据为基础的产品级市场情报系统：识别真实大众需求，将同款SKU归并为产品族，计算市场规模、增速、竞争可进入性、单位经济与新品经营预期，并通过持续回测修正预测。
 
