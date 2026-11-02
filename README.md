@@ -54,6 +54,7 @@ python3 scripts/collect_seller_p6.py --skus-file skus.txt --period weekly
 | `kw_positions` | 177,063 | **每个词的 108 个搜索位**：keyword × sku × position × price × cpc |
 | `sku` | 29,823 | SKU 级：月销/GMV/均价/drr/库存/体积/评分/上架日 |
 | `clusters` | 165 | 词簇（赛道） |
+| `sku_weekly` | 4,350 | **7 天口径**：月销/周销/加速比（周销×4÷月销，>1.15 说明在反弹） |
 
 配合 `docs/SOP-选品流程.md` 可以直接跑选品漏斗。
 
