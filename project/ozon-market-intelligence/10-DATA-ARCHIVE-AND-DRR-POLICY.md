@@ -13,25 +13,18 @@
 - SHA256：33e5f02961c2782cead58e6714266aab6cbddc31e74242f905d2a7ba218502d8
 - Drive File ID：1HdWipkSd0f8aw6Zsb_n6-UhnyX_fD_yD
 - SQLite integrity_check：ok
-- 旧版toys-slim.db另行保留；sku_weekly仅在旧版slim中，不得假定已并入新版。
-- 详细审计见 [09-DATABASE-UPDATE-AUDIT-2026-11-02.md](09-DATABASE-UPDATE-AUDIT-2026-11-02.md)。
+- 旧版toys-slim.db另行留存；sku_weekly仅在旧版slim中，不得假定已并入新版。
+- 字段口径与模型修订见 12-FIELD-DICTIONARY-VALIDATION-AND-MODEL-REVISION.md。
 
-## DRR状态：SUSPECT / QUARANTINED
-用户指出DRR字段可能存疑。从2026-11-02起，原始drr仅用于展示（带警告）、异常诊断和跨源核验；不作为硬筛选条件，不直接用于正式单点净利润、ROI或COGS上限。利润先展示不含广告的基础利润，并给DRR=0%、5%、10%、15%敏感性场景。drr=0语义同样未核实，不能自动认定为自然流量或未投放。保留raw_drr、source、snapshot_date和异常标记，不覆盖原值。
+## DRR状态：SEMANTICS_CONFIRMED / VALUE_QC_REQUIRED
+2026-11-02用户提供的Ego-Browser DOM原生悬停解释已确认：drr是推广费用与订购商品价值的比率，统计所有订单（含取消和退货），计算基准采用价格上限。因此DRR不再标记为“定义不明”。
+但数值质量仍需控制：
+- drr=0保留为0广告费用份额，不自动填充；使用daysWithTrafarets、P8推广状态辅助交叉验证。
+- 极端值（>100%或数千%）标记异常，可能由GMV分母极小导致放大；不据此直接淘汰产品。
+- 批量分析展示原始DRR、中位数、分位数和异常率。
+- 单SKU投放成本优先查P8 promotionCpcRate、promotionCpoRate和推广状态；CPC是出价不是实际扣费。
+- 正式利润最好以广告账单实际消耗对账；无账单时使用DRR敏感性场景，不伪装成精确净利。
+- 保留raw_drr、source、snapshot_date、异常标记，不覆盖原值。
 
-### 已观测分布
-- 全库29,823 SKU；drr=0为15,471（51.9%）。
-- drr>0为14,352；正值中位数8.64，P75=16.77，P90=29.11，P95=41.12，P99=96.90。
-- drr>30为1,327；drr>100为137；最大10,431.14。
-- 抗压玩具16,039 SKU中，drr>100有43，drr>30有566，drr=0有10,380。
-- product_seerfar 100样本中94个SKU可跨源对照DRR，相关系数约0.9957；样本不足以验证字段定义或解除隔离。
-
-### 解除隔离条件
-1. 确认DRR定义、分子分母、归因口径和统计周期。
-2. 确认百分数/比例单位以及0与NULL语义。
-3. 与真实广告消耗和归因GMV做代表性样本对账。
-4. 解释低销量样本及>100%的极端值。
-5. 完成验证报告并经人工批准。
-
-## 结单率
-用户业务解释为结单率=成功结算率，1-结单率可作为未成功结算比例。需确认未结算是否全部是退货，还是包含拒收、取消、未取件、配送失败。未核验前使用non_settlement_rate_scenario，不直接称为真实return_rate。
+## 结单率与退货
+nullableRedemptionRate的官方UI解释为未取消且未退回的订购商品百分比，即成功结单/妥投留存率，不是退货率。1-r表示未结单比例，可能混合取消、拒收、未取件、退货等原因；不能直接命名return_rate，也不能直接等同逆向物流成本。若拿到失败原因明细，应分别建模。
