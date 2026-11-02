@@ -1,6 +1,6 @@
 # Ozon Market Intelligence
 
-版本 v1.1｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
+版本 v1.2｜首个验证类目：解压玩具｜核心单位：产品族｜预测周期：30–90天
 
 ## 项目目标
 建立以 Ozon 市场交易与搜索数据为基础的产品级市场情报系统：识别真实大众需求，将同款 SKU 归并为产品族，计算市场规模、增速、竞争可进入性、单位经济与新品经营预期，并通过持续回测修正预测。
@@ -23,14 +23,16 @@
 7. [07 里程碑与交付物](07-ROADMAP-AND-DELIVERABLES.md)
 8. [08 SQLite初审报告](08-DATABASE-AUDIT-2026-11-02.md)
 9. [09 完整版数据库更新审计](09-DATABASE-UPDATE-AUDIT-2026-11-02.md)
+10. [10 数据归档与DRR质量政策](10-DATA-ARCHIVE-AND-DRR-POLICY.md)
 
 ## 最新数据边界
-新版 toys.db 有11张表：包含P7、Seerfar、真实seller_id、100个商品级Seerfar详情样本等。p8仅观测前108个搜索位，CR4仍是可观测样本口径。p6快照为2026-10-30；P7快照为2026-10-29。旧版slim另含4,350条sku_weekly动态记录，新版toys.db不含该表，两者不可默认合并。
+新版toys.db有11张表，包含P7、Seerfar、真实seller_id、100个商品级Seerfar详情样本。p8仅观测前108个搜索位，CR4仍是可观测样本口径。p6快照为2026-10-30；P7快照为2026-10-29。旧版slim另含4,350条sku_weekly动态记录，新版toys.db不含该表，两者不可默认合并。
 
 ## 当前状态
 - [x] 战略边界与方法论文件夹
 - [x] 新版SQLite完整性、结构和字段质量初审
 - [x] DRR标记为SUSPECT / QUARANTINED
+- [x] 数据本地归档与审计文档云端同步
 - [ ] 接入bestsellers_latest及keyword_month/window补充数据
 - [ ] 产品族exact/close/broad归并
 - [ ] 全量产品族市场规模重算
