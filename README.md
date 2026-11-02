@@ -1,47 +1,74 @@
-# Ozon 卖家端采集器（本地 HTTP，不依赖浏览器常驻）
+# Ozon 采集与情报分析套件 (`ozon-seller-kit`)
 
-用一份 Cookie jar 打 Ozon 卖家后台的分析接口，把「关键词 → 108 个搜索位 → SKU 销量」整条链采下来。
+包含两大平铺子模块：
+* **`ozon_seller`（卖家后台分析端）**：Cookie Jar 驱动，访问私有 BFF（P6 畅销榜 / P7 搜索词库 / P8 搜索位解释器 / CJM 漏斗），获取真实月销、GMV、广告费率、对手出价。
+* **`ozon_buyer`（买家前台采集端）**：免登录、池化高并发，直打页面微前端，获取**真实物理库存上限 (`stock_max`，100%覆盖)**、变体全家桶矩阵、买家评价与 1 星差评排雷、110+ 同款跟卖商工商凭据（ОГРН/公司名）。
 
-**核心结论：不需要浏览器常驻。** 浏览器只当「证书签发器」（偶尔取一次 cookie），剩下全在 Python 里跑。
+> **架构原则：无需嵌套 Git（No Git Submodule）**。两大模块平铺原生管理，各自独立解耦，物理隔离风控，中间通过 `sku` 作为统一主键完成数仓对齐合并。
 
 ---
 
-## 这套东西解决什么问题
+## 模块能力矩阵
 
-Ozon 卖家后台「分析 → 搜索可见性」里有一张表：某个搜索词下的前 108 个商品位置，含价格、CPC 出价、是否推广。
-这张表是选品和投流的核心数据，但后台没有导出，接口又是私有 BFF。
-
-本仓库把它变成可批量、可复现、可离线分析的数据管线。
-
-## 三个接口
-
-| 代号 | 端点 | 拿什么 |
+| 能力与端点 | 卖家后台端 (`ozon_seller`) | 买家前台端 (`ozon_buyer`) |
 |---|---|---|
-| **p8** | `POST /api/search-query-analytics/v2/external/explanation_by_id` | 某个词下 108 个搜索位（商品/价格/CPC/是否推广/主图） |
-| **p6** | `POST /api/site/seller-analytics/what_to_sell/data/v3` | 每个 SKU 的月销/GMV/均价/drr/库存/体积/评分（**支持 28 天 + 7 天两个口径**） |
-| **cjm** | `POST /api/search-query-analytics/v1/cjm/get-seller-analytics` | 本店每个 SKU 在搜索链路的漏斗（搜过→看到→点卡→下单→GMV） |
+| **目标域名** | `seller.ozon.ru` / `api.seller.ozon.ru` | `www.ozon.ru` (Entrypoint 微前端) |
+| **认证凭据** | **真实店铺 Cookie** (`__Secure-token`，长效) | **匿名临时 Cookie** (自动预热，高并发) |
+| **并发吞吐** | 受控单线程 / 低频（防店铺被频控） | 纯 HTTP 极速（50~200 SKU/s，池化可达 300） |
+| **真实销量 / GMV** | ✅ **`soldCount` (月销/周销) + `gmvSum`** | ❌ 无此字段（只能通过评价数或动销代理） |
+| **实时物理库存** | ⚠️ 后台申报库存 `stock` (含虚拟库存) | ✅ **`stock_max` (加入购物车上限，100%真实)** |
+| **对手出价 / DRR** | ✅ **`promotionCpcRate` (CPC出价) + `drr`** | ❌ 无此字段 |
+| **变体全家桶** | ❌ 仅返回所查单品 | ✅ **全色系/全尺码关联变体矩阵** |
+| **同款跟卖商资质** | ❌ 无 | ✅ **112+ 家跟卖企业名、ОГРН 注册号、城市** |
+| **真实买家口碑** | ⚠️ 仅有评分与总评价数 | ✅ **完整评价正文、1星差评排序、买家实拍照** |
+
+---
+
+## 核心接口速查
+
+| 代号 | 端点 / 路径 | 采集内容 |
+|---|---|---|
+| **p8** (卖家) | `POST /api/search-query-analytics/v2/external/explanation_by_id` | 某词下 108 个搜索位（商品/挂牌价/CPC出价/是否推广） |
+| **p6** (卖家) | `POST /api/site/seller-analytics/what_to_sell/data/v3` | 全量 SKU 月销/GMV/均价/drr/申报库存/体积（支持 28天/7天口径） |
+| **cjm** (卖家) | `POST /api/search-query-analytics/v1/cjm/get-seller-analytics` | 本店每个 SKU 在搜索链路的漏斗（搜过→看到→点卡→下单→GMV） |
+| **search** (买家) | `GET /api/entrypoint-api.bx/page/json/v2?url=/search/...` | 关键词搜索（含 `stock_max` 物理库存上限、`advertLite` 广告标记） |
+| **detail** (买家) | `GET /product/<sku>/` + `layout_page_index=2` | 详情画像（价格三件套、变体全家桶、全量属性、富文本HTML、大促库存） |
+| **reviews** (买家)| `GET /product/<sku>/reviews/?sort=score_asc` | 真翻页；`score_asc` 直接置顶 1 星差评排雷（正文/优缺点/实拍照） |
+| **offers** (买家) | `GET /modal/otherOffersFromSellers?product_id=<sku>` | 提取跟卖商工商凭据（企业主体全称、ОГРН/ОГРНИП 注册号、到底报价） |
+
+---
 
 ## 快速开始
 
 ```bash
-git clone <this repo> && cd ozon-seller-kit
-python3 -m pip install --upgrade pip   # 无第三方依赖，纯标准库
-
-# 1) 拿 cookie（两条路，二选一）
-#    A. 用 ego-browser / Chrome CDP 自动签
-ego-browser nodejs <<'X'
-await import('file://' + process.cwd() + '/scripts/mint_seller_cookie.mjs');
-X
-#    B. 浏览器插件导出 Cookie JSON，手动放进 ~/.config/ozon-seller/cookie.txt
-#       ⚠ 必须包含 abt_data，否则一律 403 fab_chlg（详见 ozon_seller/README.md）
-
-# 2) 探活
-python3 scripts/check_seller_cookie.py      # 0=可用 2=鉴权失效 3=限流 4=网络
-
-# 3) 采
-python3 scripts/collect_seller_p8.py --words-file words.txt --out data/p8.jsonl
+# 1. 卖家后台端：必须探活（需要本地卖家 Cookie）
+python3 scripts/check_seller_cookie.py
 python3 scripts/collect_seller_p6.py --skus-file skus.txt --period monthly
-python3 scripts/collect_seller_p6.py --skus-file skus.txt --period weekly
+python3 scripts/collect_seller_p8.py --words-file words.txt --out data/p8.jsonl
+
+# 2. 买家前台端：免登录高并发采集
+# 关键词搜索 + 物理库存上限 (stock_max) + 1 星差评排雷
+python3 scripts/collect_buyer.py --keyword "сквиш" --pages 2 --reviews 1 --sort score_asc --out data/buyer.json
+
+# 单品/多品深度抓取物理库存与差评
+python3 scripts/collect_buyer.py --sku 5081332378 --sku 5527434733 --reviews 2 --sort score_asc --out data/sku_audit.json
+```
+
+## Python API 调用示例
+
+```python
+# 卖家端
+from ozon_seller import SellerClient
+seller = SellerClient()
+p6_items = seller.what_to_sell(limit=50, period="monthly")
+
+# 买家端
+from ozon_buyer import BuyerClient
+buyer = BuyerClient()
+buyer_items = buyer.search("сквиш", pages=2)
+pdp_detail = buyer.sku_detail("5527434733")
+reviews_1star = buyer.sku_reviews("5081332378", sort="score_asc")
+offers = buyer.other_offers("5527434733")
 ```
 
 ## 数据
