@@ -38,6 +38,9 @@
 - 全部p6 SKU销量：3,332,338件。
 - 因SKU跨簇，cluster总量不具备可加性；全市场总量必须按全局唯一SKU计算，并把未归类SKU单独列示。
 
+## 原始簇级total_sales字段注意事项
+dim_cluster.total_sales是原有簇级派生字段，其口径与本次基于sku_snapshot_v2对簇内不同SKU去重后汇总的p6销量并不一致，不能互换。例如：C002原字段total_sales=8,930,969，而本次p6去重销量=643,286；C001原字段=14,959,200，而本次p6去重销量=405,210。后续报告必须同时保留“原始簇指标”和“p6去重SKU指标”，先核实原始total_sales来源与重复计数规则，再决定是否用于市场规模。
+
 ## 按簇内去重p6销量排序的前10簇
 | Cluster | 主词 | 簇内SKU | p6 SKU | p6销量 | p6 GMV RUB | ASP RUB | 卖家数 | 跨簇SKU |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -52,7 +55,7 @@
 | C103 | сквишь | 153 | 151 | 182,139 | 30,505,182 | 167.5 | 67 | 153 |
 | C162 | сквиш котик антистресс | 154 | 150 | 126,613 | 24,042,098 | 189.9 | 63 | 154 |
 
-注：这里的销量是p6快照窗口的sold_count，报告中不将其擅自称为28天，统计窗口须按源字段口径确认。
+注：销量是p6快照窗口的sold_count，不擅自称为28天，统计窗口按源字段口径确认。
 
 ## 数据库与验收
 派生数据库：ozon-product-layers.db
@@ -67,6 +70,7 @@ SQLite integrity_check：ok
 - dim_product_cluster.csv（165簇）
 - bridge_cluster_sku.csv（40,759簇-SKU关系）
 - dim_sku.csv（48,898 SKU实体）
+- product_cluster_overview.csv（165簇排序概览）
 - bridge_cluster_keyword.csv（1,334簇-关键词关系）
 - bridge_sku_keyword.csv（177,063关键词-SKU关系）
 - manifest.json及build_product_layers.py
