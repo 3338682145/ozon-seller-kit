@@ -68,3 +68,11 @@
 - 用户截图选中日显示10,107,993 RUB，较P6日均高14.02%，数量级相符；结论为合理性核验，不是逐日精确对账。
 - 右侧19,633,483 RUB指标统计窗口/定义未确认，暂不用于对账。
 - 详情：[27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md](27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md)。
+
+
+## P6类目范围审计（2026-11-02）
+- 发现P6 sku_snapshot_v2不是纯抗压玩具样本，而是跨类目混合池：29,823 SKU覆盖22个category1、378个category3。
+- 当前category3_id=92811（抗压玩具）：16,039 SKU（53.78%），28天Gross GMV 248,221,059 RUB（18.82%），Gross销量1,117,485件。
+- 非抗压玩具：13,784 SKU（46.22%），28天Gross GMV 1,070,689,675 RUB（81.18%）。category3_id无NULL。
+- 因此此前P6总池13.189亿RUB是混合类目GMV，不能称为抗压玩具市场规模。抗压玩具当前可观测28天Gross GMV约2.482亿RUB，Net-est约2.208亿RUB。
+- 后续项目默认scope必须显式限定category3_id=92811；外部类目只作为替代品/相邻市场分析，不并入核心分母。报告：[28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md](28-P6-CATEGORY-SCOPE-AUDIT-2026-11-02.md)。
