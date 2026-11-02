@@ -18,7 +18,7 @@ Supabase project_id：eohvguguegxbhszvssbd；PostgreSQL 17.6。
 - ozon_analytics：run_id版本化计算结果。
 - ozon_meta：快照、运行、上下文、决策、提示词、事件、工件和人工标签。
 
-2026-11-02核验：原始12张表已全部导入，合计466,767行。历史分析结果部分已上传：cluster_market_165=165、keyword_market_1642=1,642、cluster_sku_detail=24,000/40,757；keyword_sku_detail与market_scale_summary尚未完成。详情见24号报告。下一步仍需在Supabase创建新run_id重新计算和对账。
+2026-11-02核验：原始12张表已全部导入，合计466,767行。历史分析结果部分已上传：cluster_market_165=165、keyword_market_1642=1,642、cluster_sku_detail=40,757/40,757；keyword_sku_detail=12,000/177,060（上传中）；market_scale_summary=0/39。详情见24号报告。下一步仍需在Supabase创建新run_id重新计算和对账。
 
 ## 项目目标
 建立以Ozon市场交易与搜索数据为基础的产品级市场情报系统：识别真实大众需求，将同款SKU归并为产品族，计算市场规模、增速、竞争可进入性、单位经济与新品经营预期，并通过持续回测修正预测。
