@@ -57,3 +57,12 @@ Keyword → Demand Cluster → Product Family → SKU → Seller Offer。
 
 ## 类目GMV交叉核验
 - [27 抗压玩具Ozon后台截图与P6 GMV核验](27-ANTISTRESS-GMV-SCREENSHOT-RECONCILIATION-2026-11-02.md)：P6 28天Gross GMV约2.482亿 RUB，日均约886.5万 RUB；截图选中日约1,010.8万 RUB，差异约14%，数量级相符。
+
+
+## 数据库性能与规范化层（2026-11-02）
+- [29 数据库性能与结构优化报告](29-DATABASE-PERFORMANCE-AND-STRUCTURE-OPTIMIZATION-2026-11-02.md)
+- [Raw索引与自然键优化SQL](sql/optimize_raw_schema_indexes_v1.sql)
+- [P8 top108标准事实表SQL](sql/build_p8_curated_fact_v1.sql)
+- [关键词桥表与市场宽表SQL](sql/build_keyword_market_mart_v1.sql)
+- 当前P8事实表：`ozon_analytics.fact_p8_keyword_sku_108`；关键词市场表：`ozon_analytics.mart_keyword_market_base_v1`。
+- 抗压玩具专用视图：`v_p6_antistress_28d_v1`、`v_p8_antistress_top108_v1`。
