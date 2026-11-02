@@ -106,3 +106,15 @@ Google Drive用于原始文件和归档；正式计算数据以已导入Supabase
 - `ozon_analytics.p6_p7_quality_audit`：P6/P7行数、唯一性、NULL和语义质量审计。
 - 最新构建run：`p6_p7_foundation_20261102_v1`；启动后先检查该run的状态及上述4张表行数。
 - P7 ca保留raw，语义待核；dyn比较基准未确认。不得把ca当加购人数，或把dyn直接当销量增速。
+
+
+## 新增标准分析资源（2026-11-02）
+- `ozon_analytics.fact_p8_keyword_sku_108`：P8 position 1–108标准事实，grain=run×snapshot×keyword×sku，已索引keyword/position、sku倒排、seller和category。
+- `ozon_analytics.bridge_keyword_cluster_v1`：V1 keyword→Primary cluster桥表。
+- `ozon_analytics.mart_keyword_market_base_v1`：一行一个关键词，包含P7 exact match、P8 coverage、P6类目构成。
+- `ozon_analytics.v_p6_antistress_28d_v1`：P6抗压玩具category3_id=92811视图。
+- `ozon_analytics.v_p8_antistress_top108_v1`：P8前108位中匹配到抗压玩具P6 SKU的货架子集。
+- `ozon_analytics.v_keyword_market_scope_v1`：关键词市场宽表视图。
+- `ozon_analytics.v_sku_cluster_power_source_v1`：明确SKU power是SKU×cluster粒度。
+
+查询优化：优先使用上述fact/mart/view；不要日常查询历史keyword_sku_detail大JSONB payload。V2关键词相似度使用fact_p8的SKU倒排索引，按SKU共现批量生成关键词对，再在SQL内聚合。
