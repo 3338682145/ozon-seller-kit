@@ -1,6 +1,6 @@
 """卖家端（seller.ozon.ru）本地 HTTP 采集客户端。
 
-设计依据（2026-10-30 实测，macOS / 卖家 <seller_id>）：
+设计依据（2026-10-30 实测，macOS / 卖家 5149811）：
 
   * cookie + UA 纯 HTTP 就能打通 seller.ozon.ru 分析接口，不需要浏览器常驻
   * 必须在 CDP 里取 cookie（__Secure-token / __Secure-product-user-id 是 HttpOnly）
@@ -27,6 +27,17 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SSL_CTX = ssl.create_default_context()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """不自动跟随重定向。307 是 Ozon 前层反爬的 `__rr` 循环，
+    必须手动接住下发的 __Secure-ETC 再重试，否则会无限转圈。"""
+
+    def redirect_request(self, *args, **kwargs):  # noqa: D102
+        return None
+
+
+_opener = urllib.request.build_opener(_NoRedirect())
 
 HOME = Path.home()
 SELLER_DIR = HOME / ".config" / "ozon-seller"
@@ -60,6 +71,38 @@ class Jar:
     uuid: Optional[str] = None
     cookie_names: List[str] = field(default_factory=list)
     minted_at: str = ""
+    cookie_file: Optional[Path] = None
+
+    def update_from_set_cookie(self, set_cookies) -> list:
+        """吸收服务端下发的 Set-Cookie，返回被更新的 cookie 名列表。
+
+        2026-11-02 实测：认证接口每次返回都可能带新的 `abt_data`（反爬令牌）。
+        浏览器会接收，纯 HTTP 客户端如果忽略，就会拿着一份冻结的 abt_data，
+        过一段时间被前层 nginx 判为异常 —— 表现是 307 + __rr 无限重定向。
+        """
+        changed = []
+        jar = {}
+        for part in self.cookie.split("; "):
+            i = part.find("=")
+            if i > 0:
+                jar[part[:i]] = part[i + 1:]
+        for raw in set_cookies or []:
+            kv = raw.split(";")[0]
+            if "=" not in kv:
+                continue
+            name, val = kv.split("=", 1)
+            if jar.get(name) != val:
+                jar[name] = val
+                changed.append(name)
+        if changed:
+            self.cookie = "; ".join(f"{k}={v}" for k, v in jar.items())
+            if self.cookie_file:
+                try:
+                    self.cookie_file.write_text(self.cookie, encoding="utf-8")
+                    self.cookie_file.chmod(0o600)
+                except OSError:
+                    pass
+        return changed
 
     @classmethod
     def load(cls, cookie_file: Path = COOKIE_FILE) -> "Jar":
@@ -83,8 +126,10 @@ class Jar:
                     break
         if not company_id:
             raise AuthExpired("cookie 里没有 sc_company_id，卖家端未登录")
-        return cls(cookie=cookie, ua=ua, company_id=company_id, uuid=meta.get("uuid"),
-                   cookie_names=meta.get("cookie_names") or [], minted_at=meta.get("minted_at", ""))
+        obj = cls(cookie=cookie, ua=ua, company_id=company_id, uuid=meta.get("uuid"),
+                  cookie_names=meta.get("cookie_names") or [], minted_at=meta.get("minted_at", ""))
+        obj.cookie_file = cookie_file
+        return obj
 
 
 class SellerClient:
@@ -114,22 +159,43 @@ class SellerClient:
             "cookie": self.jar.cookie,
         }
 
+    def _absorb(self, headers) -> None:
+        """接住服务端下发的 cookie（abt_data / __Secure-ETC 会周期性轮换）"""
+        try:
+            sc = headers.get_all("Set-Cookie") or []
+        except AttributeError:
+            return
+        if not sc:
+            return
+        changed = self.jar.update_from_set_cookie(sc)
+        if changed:
+            with self._lock:
+                self.stats.setdefault("cookie_updates", 0)
+                self.stats["cookie_updates"] += len(changed)
+
     def post(self, path: str, body: Dict[str, Any], *, app_name: str,
              page_type: str, referer: str, retries: int = 2) -> Dict[str, Any]:
         url = BASE + path
         headers = self._headers(app_name, page_type, referer)
-        payload = json.dumps(body, ensure_ascii=False).encode()
+        method = "POST" if body is not None else "GET"
+        payload = json.dumps(body, ensure_ascii=False).encode() if body is not None else None
         last: Optional[Exception] = None
 
         for attempt in range(retries + 1):
-            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            req = urllib.request.Request(url, data=payload, headers=headers, method=method)
             with self._lock:
                 self.stats["req"] += 1
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout, context=SSL_CTX) as r:
+                with _opener.open(req, timeout=self.timeout) as r:
                     raw = r.read()
+                    self._absorb(r.headers)
             except urllib.error.HTTPError as exc:
+                self._absorb(exc.headers)          # 307 会带新的 __Secure-ETC
                 raw = exc.read()[:400]
+                if exc.code in (301, 302, 307, 308) and attempt < 2:
+                    # 前层反爬重定向：接住下发 cookie 后重试，跳出 __rr 循环
+                    time.sleep(0.4 * (attempt + 1))
+                    continue
                 if exc.code in (401, 403, 307):
                     with self._lock:
                         self.stats["auth"] += 1

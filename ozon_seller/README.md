@@ -132,6 +132,34 @@ bash scripts/install_keepalive_launchd.sh 900         # 装 LaunchAgent（已装
 心跳返回 401 时跑 `bash scripts/refresh_seller_cookie.sh`（需要 ego 里卖家端处于登录态）。
 这条链路 11-01 验证过：401 → 重签 → 探活 200。
 
+### ★ 关键：必须接收服务端下发的 `Set-Cookie`
+
+**这是会话能活多久的决定性因素**（2026-11-02 实测确认）。
+
+反爬令牌 `abt_data` 由服务端**周期性下发新的**，浏览器会接收，纯 HTTP 客户端如果忽略，
+就会一直拿着一份冻结的值，过一阵被前层 nginx 判为异常：
+
+```
+冻结 abt_data  →  nginx 307 + __rr 无限重定向  →  （接住 ETC 后）401
+```
+
+实测：第一次业务请求就返回了新的 `abt_data`（990 → 993 字符）：
+
+```
+第 1 个请求 200 → Set-Cookie: abt_data 更新
+后续 5 个请求   → 无变化（周期性轮换，不是每请求）
+```
+
+**已实现**：`SellerClient` 每次请求后吸收 `Set-Cookie` 并原子回写 `cookie.txt`（0600）。
+`stats["cookie_updates"]` 可看累计接收次数。
+
+两条配套措施：
+
+1. **禁止自动跟随重定向** —— `307 + __rr=N` 是陷阱，跟着转会死循环。
+   现在接住 307 下发的 `__Secure-ETC` 后重试（最多 2 次），直接暴露真实状态（200 / 401）。
+2. **心跳走同一条通道** —— `auto_renew_probe.py` 用 `SellerClient` 打便宜探针，
+   所以**探活行为本身就在保活**（顺带刷新 abt_data）。
+
 ### 能不能多个浏览器共用一份 token？——能，但 UA 必须一模一样
 
 实测（同一份 cookie，只换 UA 打同一个接口）：
