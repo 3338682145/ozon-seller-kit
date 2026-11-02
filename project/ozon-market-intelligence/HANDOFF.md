@@ -39,3 +39,20 @@ toys.db SHA256=33e5f02961c2782cead58e6714266aab6cbddc31e74242f905d2a7ba218502d8�
 
 ## 业务口径
 P6毛订单含取消/退货；Net-est按nullableRedemptionRate估算，NULL不填补；P6 salesDynamics是GMV动态；P7 count_28d是独立搜索买家数；P8 position 1–108；CR4为可观测SKU样本；DRR定义已确认但数值仍QC；V1冻结，V2为搜索意图聚类，L2a同款/跟卖独立建设。
+
+
+## 最新完成：P6/P7事实层（2026-11-02）
+- run_id：`p6_p7_foundation_20261102_v1`；Supabase执行状态：completed_with_data_quality_warnings。
+- P6：29,823 SKU唯一；Gross units 3,332,338；Net-est units 2,964,159.549；Gross GMV 1,318,910,734.23 RUB；Net GMV估算1,140,330,863.25 RUB；redemption缺失126。
+- P7：9,979 query唯一；snap_date 2026-10-29；dyn_7d和dyn_28d各4个NULL，极端值保留raw。
+- P8核心关键词到P7 query精确映射：560/1,642（34.10%）；1,082未匹配，不代表无需求。
+- 新增表：ozon_analytics.fact_p6_sku_28d、fact_p7_keyword_28d、bridge_core_keyword_p7、p6_p7_quality_audit。四张表已启用RLS。
+- 重要未决：P7 ca字段的实际值为double precision且范围0–78.87，与“加购人数”解释存在冲突；只保留ca_raw，未用于人数统计。P7 dyn比较基准未确认。
+- 可复现SQL：project/ozon-market-intelligence/sql/build_p6_p7_foundation_v1.sql。
+- 报告：26-P6-P7-FACT-LAYER-BUILD-REPORT-2026-11-02.md。
+
+## 下一步
+1. 核实P7 ca原生tooltip/接口单位和分母。
+2. 对1,082个未精确匹配关键词做俄语规范化/别名候选召回与人工审核。
+3. 基于P6/P7 facts构建统一keyword-market特征宽表，保留SKU/query粒度边界。
+4. 再计算Seller CR4、max_slot30、new_top10和Entry。
