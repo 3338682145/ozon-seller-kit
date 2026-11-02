@@ -56,3 +56,7 @@ P6毛订单含取消/退货；Net-est按nullableRedemptionRate估算，NULL不�
 2. 对1,082个未精确匹配关键词做俄语规范化/别名候选召回与人工审核。
 3. 基于P6/P7 facts构建统一keyword-market特征宽表，保留SKU/query粒度边界。
 4. 再计算Seller CR4、max_slot30、new_top10和Entry。
+
+
+## Ozon后台GMV截图核验
+P6 category3_id=92811（抗压玩具）：28天Gross GMV 248,221,059 RUB；Net-est GMV 220,841,423 RUB；日均Gross 8,865,038 RUB。用户截图选中日2026-11-01显示10,107,993 RUB，比P6日均高14.02%，量级相符。截图右侧19,633,483 RUB指标口径不清，未用于核验。详情见27号报告。下一轮如要精确对账，需确认截图日期筛选范围及右侧指标tooltip。
