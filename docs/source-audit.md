@@ -32,6 +32,16 @@ Seller 使用登录 Cookie、公司 ID、部分端点要求 uuid；Buyer 旧流�
 
 Git tree 存在 `data/toys-slim.db`（19,861,504 bytes）。上游 2026-11-02 审计报告列出 `kw_metrics` 1,642、`kw_positions` 177,063、`sku` 29,823、`clusters` 165、`sku_weekly` 4,350 行；其 `integrity_check=ok` 属**历史报告转述**，本次未直接复核。入库迁移前必须只读执行 `PRAGMA integrity_check`、`table_info`、键唯一性及快照关联对账。
 
+**独立 TEST Agent Round 1 补充证据**：机器 B [Issue #2](https://github.com/3338682145/ozon-seller-kit/issues/2) 报告已在只读环境执行 `PRAGMA integrity_check=ok`、逐表 COUNT 与上述五表行数一致；这是机器 B 的执行反馈，机器 A 并未重复运行原始 SQLite，`table_info`、唯一性、关联及权限仍需分别验收。
+
+**公开分发风险**：该仓库目前为 public，`data/toys-slim.db` 已被 Git 跟踪，包含 SKU、卖家与市场统计数据；对其公开分发的授权尚未确认。禁止把文件存在于仓库等同于可合法再分发；应先核验权利与必要脱敏，再经所有者决定是否改为私有、移除跟踪文件及清理历史。修改 `.gitignore` 无法撤回既有历史，此 PR 不执行破坏性删除。对应 `GAP-015`。
+
+## 历史 README 与解析代码冲突（需弃用旧断言）
+
+`README.md` 与 `ozon_buyer/README.md` 把 `stock_max` / 购物车 `maxItems` 宣称为“100%真实物理库存”；**此断言没有库存实盘或仓储对账证据，不能作为数据契约**。以 `field-dictionary.md` 中“最多可购数代理值 ≠ 真实物理库存”为准。
+
+此外，`ozon_buyer/collector.py` 将 `trackingInfo.click.custom.advertLite` 通过 `bool(...)` 转换：旧解析会把缺失和 `false` 混淆；新 Adapter 必须保留 nullable 语义，不可直接复制此行为。
+
 ## 未验证边界
 
 没有对 README 的性能数字作生产结论。尚未执行合法真实 Ozon 请求、全仓动态执行、真实 Docker 中间件/生产恢复演练。需在授权和许可范围明确后逐项验收。
