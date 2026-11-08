@@ -12,5 +12,7 @@
 | buyer_detail | 同入口 `url=/product/{sku}/`，含 PDP2 | sku、include_pdp2、with_offers | 无 | `ozon_buyer/api.py:95-148`；支持离线解析 |
 | buyer_reviews | 同入口 `url=/product/{sku}/reviews/?reviewsVariantMode=2&sort=...&page=N` | SKU、页数、排序 | page N | `ozon_buyer/collector.py:387-463` |
 | buyer_offers | 同入口 `url=/modal/otherOffersFromSellers?product_id={sku}&sort=price` | SKU、sort | 尚未确认全量 Offers 的翻页行为 | `ozon_buyer/api.py:158-236` |
+| buyer_image_upload | POST `www.ozon.ru/api/composer-api.bx/_action/searchByImage` | multipart `file` 图片上传；旧代码依赖 Cookie；上传与留存许可未核验 | 单次上传，返回 `image_id` 关联标识 | `ozon_buyer/image.py:6-9`；**禁用**，不得复用自动 Cookie 预热 |
+| buyer_image_results | GET `www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url=/search-by-image?image_id=<id>&page=N` | 上一步获得的 `image_id`、page；许可未核验 | 按 page；需样本验证完整性 | `ozon_buyer/image.py:6-13`；**禁用**，仅可做离线解析测试 |
 
-说明：Seller 网页内部端点**不是官方开放 Seller API**；在线启用前需独立核验账号、许可、留存及速率。新 Runtime 不依赖 Cookie 池、挑战绕过或多身份轮换；403、挑战页及权限失效立即暂停相关源。
+说明：以图搜图的 2 条 Buyer 私有入口仅是**旧代码识别结果**，不是授权证明或新 Runtime 支持项。Seller 网页内部端点**不是官方开放 Seller API**；在线启用前需独立核验账号、许可、留存及速率。新 Runtime 不依赖 Cookie 池、挑战绕过或多身份轮换；403、挑战页及权限失效立即暂停相关源。
