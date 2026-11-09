@@ -1,6 +1,7 @@
 """FastAPI control/data API. All mutation routes are RBAC protected."""
 from __future__ import annotations
 from decimal import Decimal
+from datetime import timedelta
 from typing import Any
 import hmac
 import os
@@ -11,18 +12,23 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
-from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from collector.agents.tools import CollectorOperationsAgent, DatabaseOperationsAgent
 from collector.agents.policy import authorize_approval
 from collector.config import Settings, must_have_auth
 from collector.errors import PolicyViolation
 from collector.scheduler.jobs import JobService
 from collector.sessions.credentials import mark_dead
+from collector.monitoring.incidents import verify_incident_recovery
 from collector.storage.database import make_session_factory
 from collector.storage.models import (CollectionJob, CollectionPolicy, DataSource, Product, Keyword,
-                                      KeywordProduct, Incident, JobEvent, DataQualityIssue, AgentDecision)
+                                      KeywordProduct, Incident, JobEvent, DataQualityIssue, AgentDecision, WorkerHeartbeat, utc_now)
 
 REQUESTS = Counter("ozon_api_requests_total", "API responses", ["method", "route", "status"])
+JOB_STATES = ("pending", "retry_wait", "running", "completed", "canceled", "dead_letter", "blocked")
+JOB_GAUGE = Gauge("ozon_collection_jobs", "Control-plane jobs by state", ["status"])
+INCIDENT_GAUGE = Gauge("ozon_open_incidents", "Unresolved incidents by severity", ["severity"])
+WORKER_GAUGE = Gauge("ozon_live_workers", "Workers with heartbeat within 90 seconds")
 
 
 class JobCreate(BaseModel):
@@ -32,6 +38,11 @@ class JobCreate(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
     batch_id: str | None = Field(default=None, max_length=128)
     priority: int | None = Field(default=None, ge=-10, le=10)
+
+
+class RecoveryVerification(BaseModel):
+    checks: dict[str, bool]
+    evidence_ref: str = Field(min_length=1, max_length=128)
 
 
 class DeadCredential(BaseModel):
@@ -86,13 +97,18 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
             return "admin"
         if settings.api_key and hmac.compare_digest(candidate, settings.api_key):
             return "operator"
+        if settings.viewer_key and hmac.compare_digest(candidate, settings.viewer_key):
+            return "viewer"
         raise HTTPException(status_code=401, detail="invalid API key")
 
     def reader(request: Request):
         return role(request)
 
     def operator(request: Request):
-        return role(request)
+        who = role(request)
+        if who not in {"operator", "admin"}:
+            raise HTTPException(status_code=403, detail="operator role required")
+        return who
 
     def admin(request: Request):
         if role(request) != "admin":
@@ -101,6 +117,17 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
 
     @app.get("/metrics", include_in_schema=False)
     def prometheus():
+        # Refresh server-side gauges from PG; labels are bounded, never contain
+        # user input, credential metadata or source URLs.
+        with sf() as db:
+            statuses = dict(db.execute(select(CollectionJob.status, func.count()).group_by(CollectionJob.status)).all())
+            severities = dict(db.execute(select(Incident.severity, func.count()).where(Incident.status == "open").group_by(Incident.severity)).all())
+            active = db.scalar(select(func.count()).select_from(WorkerHeartbeat).where(WorkerHeartbeat.last_seen_at >= utc_now()-timedelta(seconds=90)))
+            for status in JOB_STATES:
+                JOB_GAUGE.labels(status).set(statuses.get(status, 0))
+            for severity in ("P0", "P1", "P2", "P3"):
+                INCIDENT_GAUGE.labels(severity).set(severities.get(severity, 0))
+            WORKER_GAUGE.set(active or 0)
         return PlainTextResponse(generate_latest().decode(), media_type=CONTENT_TYPE_LATEST)
 
     @app.get("/healthz", include_in_schema=False)
@@ -143,6 +170,12 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
         if not job:
             raise HTTPException(404, "job not found")
         return {"id": job.id, "status": job.status}
+
+    @app.post("/api/v1/sources/{source_id}/resume", dependencies=[Depends(admin)])
+    def resume_source(source_id: str):
+        if not jobs.resume_source(source_id):
+            raise HTTPException(409, "source recovery requires an operator pause and verified policy")
+        return {"source_id": source_id, "status": "enabled"}
 
     @app.get("/api/v1/products", dependencies=[Depends(reader)])
     def products(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
@@ -198,6 +231,14 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
             return _page(select(Incident).order_by(Incident.created_at.desc()), db, limit, offset,
                          lambda i: {"id": i.id, "severity": i.severity, "status": i.status, "summary": i.summary, "count": i.occurrence_count})
 
+    @app.post("/api/v1/incidents/{incident_id}/verify-recovery", dependencies=[Depends(admin)])
+    def verify_recovery(incident_id: str, evidence: RecoveryVerification):
+        with sf.begin() as db:
+            if not verify_incident_recovery(db, incident_id, checks=evidence.checks,
+                                            evidence_ref=evidence.evidence_ref, approver="admin-api"):
+                raise HTTPException(409, "recovery must pass whitelisted checks with evidence")
+        return {"incident_id": incident_id, "status": "resolved"}
+
     @app.get("/api/v1/database/health", dependencies=[Depends(reader)])
     def database_health():
         return database.check_database_health()
@@ -225,6 +266,10 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
                 if not source:
                     raise HTTPException(404, "source not found")
                 source.enabled, source.blocked, source.blocked_reason = False, True, "approved_agent_pause"
+                db.query(CollectionJob).filter(CollectionJob.source_id == source.source_id,
+                    CollectionJob.status.in_(["pending", "retry_wait", "running"])).update(
+                    {"status": "blocked", "last_error_code": "source_blocked", "lease_owner": None,
+                     "lease_expires_at": None}, synchronize_session=False)
             elif action == "schedule_collection_job":
                 # Requires a second transaction because JobService validates its own policy.
                 # Do not execute inside this transaction: use the human-reviewed API job POST.
@@ -245,4 +290,4 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
     return app
 
 
-app = create_app(settings=Settings()) if os.getenv("COLLECTOR_APP_LAZY", "0") != "1" else None
+# Launch with: uvicorn collector.api:create_app --factory

@@ -132,6 +132,7 @@ class CollectionJob(Base):
     last_error = Column(String(512))  # sanitized only
     next_retry_at = Column(DateTime(timezone=True))
     lease_owner = Column(String(128))
+    lease_expires_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
     completed_at = Column(DateTime(timezone=True))
@@ -198,6 +199,7 @@ class Incident(Base):
     actions = Column(JSON, default=list)
     recovered_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    last_seen_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
 
 class AgentDecision(Base):
@@ -231,3 +233,25 @@ class CredentialStatus(Base):
     status = Column(String(24), nullable=False, default="active")
     expires_at = Column(DateTime(timezone=True))
     updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class CollectionTarget(Base):
+    """Explicitly configured freshness-driven recurring targets; no blind scanning."""
+    __tablename__ = "collection_targets"
+    id = Column(String(36), primary_key=True, default=uuid_str)
+    source_id = Column(String(64), ForeignKey("data_sources.source_id"), nullable=False)
+    endpoint = Column(String(256), nullable=False)
+    kind = Column(String(24), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    enabled = Column(Boolean, nullable=False, default=False)
+    next_due_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    last_job_id = Column(String(36))
+    __table_args__ = (Index("ix_target_due", "enabled", "next_due_at"),)
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeats"
+    worker_id = Column(String(128), primary_key=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    state = Column(String(24), nullable=False, default="idle")
+    last_job_id = Column(String(36))

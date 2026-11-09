@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime
 from uuid import uuid5, NAMESPACE_URL
-from sqlalchemy import select
+from sqlalchemy import select, and_, case
 from sqlalchemy.orm import Session
 from collector.storage.models import Product, Keyword, KeywordProduct, DataQualityIssue
 
@@ -47,7 +47,28 @@ def write_silver(db: Session, batch, job_id: str) -> dict[str, int]:
             relations[rid] = {"id": rid, "keyword_id": kid, "ozon_id": sku, "observed_date": day,
                               "position": r["position"], "is_advert": r["is_advert"], "source": r["source"],
                               "dataset_version": r["dataset_version"], "algorithm_version": r["algorithm_version"]}
-    _upsert(db, Product.__table__, list(products.values()), ["ozon_id"], ["title", "price_rub", "observed_at", "source", "dataset_version", "algorithm_version", "data_type"])
+    # Sparse P8 SERP rows or older imports must not erase a better PDP master.
+    # Also do not let a late older snapshot overwrite a newer price/title.
+    if products:
+        dialect = db.bind.dialect.name
+        if dialect == "postgresql":
+            from sqlalchemy.dialects.postgresql import insert
+        elif dialect == "sqlite":
+            from sqlalchemy.dialects.sqlite import insert
+        else:
+            raise ValueError("unsupported master dialect")
+        t = Product.__table__
+        for start in range(0, len(products), 100):
+            stmt = insert(t).values(list(products.values())[start:start+100])
+            fresh = stmt.excluded.observed_at >= t.c.observed_at
+            def latest(col):
+                return case((fresh, getattr(stmt.excluded, col)), else_=getattr(t.c, col))
+            stmt = stmt.on_conflict_do_update(index_elements=["ozon_id"], set_={
+                "title": case((and_(fresh, stmt.excluded.title.is_not(None)), stmt.excluded.title), else_=t.c.title),
+                "price_rub": case((and_(fresh, stmt.excluded.price_rub.is_not(None)), stmt.excluded.price_rub), else_=t.c.price_rub),
+                **{key: latest(key) for key in ("observed_at", "source", "dataset_version", "algorithm_version", "data_type")},
+            })
+            db.execute(stmt)
     _upsert(db, Keyword.__table__, list(keywords.values()), ["id"], ["text", "observed_at", "dataset_version"])
     _upsert(db, KeywordProduct.__table__, list(relations.values()), ["id"], ["position", "is_advert", "dataset_version", "algorithm_version"])
     for issue in batch.issues:

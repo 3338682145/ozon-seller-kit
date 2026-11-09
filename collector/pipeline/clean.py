@@ -83,6 +83,10 @@ def clean_records(rows: list[dict], source: str, dataset_version: str) -> Silver
         gross = decimal_ru(row.get("gross_units_28d", row.get("soldCount")))
         gmv = decimal_ru(row.get("gross_gmv_rub_28d", row.get("gmvSum")))
         redemption = decimal_ru(row.get("redemption_rate_pct", row.get("redemptionRate")))
+        avg_price = decimal_ru(row.get("avg_price_rub", row.get("avgPrice")))
+        if avg_price is not None and avg_price < 0:
+            issues.append({"index": i, "issue_type": "negative_avg_price", "reference_id": sku})
+            avg_price = None
         if redemption is not None and not 0 <= redemption <= 100:
             issues.append({"index": i, "issue_type": "invalid_redemption_rate", "reference_id": sku})
             redemption = None
@@ -90,6 +94,7 @@ def clean_records(rows: list[dict], source: str, dataset_version: str) -> Silver
             issues.append({"index": i, "issue_type": "negative_gross_units", "reference_id": sku})
             gross = None
         net_est = gross * redemption / Decimal(100) if gross is not None and redemption is not None else None
+        net_gmv_est = net_est * avg_price if net_est is not None and avg_price is not None else None
         dt = "platform_stat" if gross is not None or gmv is not None else "observation"
         cleaned.append({
             "ozon_id": sku, "title": row.get("title") or row.get("name"), "price_rub": price,
@@ -97,6 +102,7 @@ def clean_records(rows: list[dict], source: str, dataset_version: str) -> Silver
             "position": pos, "is_advert": row.get("is_advert"),
             "observed_at": observed_utc(row.get("observed_at")), "calculated_at": now,
             "gross_units_28d": gross, "gross_gmv_rub_28d": gmv, "redemption_rate_pct": redemption,
+            "avg_price_rub": avg_price, "net_gmv_est_rub_28d": net_gmv_est,
             "net_units_est_28d": net_est, "source": source, "data_type": dt,
             "dataset_version": dataset_version, "algorithm_version": ALGORITHM_VERSION,
         })

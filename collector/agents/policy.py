@@ -4,6 +4,7 @@ from datetime import timedelta
 from sqlalchemy.orm import Session
 from collector.storage.models import AgentApproval, AgentDecision, utc_now, uuid_str
 from collector.errors import PolicyViolation
+from collector.scheduler.jobs import contains_secret_keys
 
 READ_ONLY = {
     "get_collection_status", "get_source_health", "get_collection_coverage", "inspect_collection_errors",
@@ -17,6 +18,8 @@ EXECUTABLE_AFTER_APPROVAL = {"schedule_collection_job", "pause_collection_source
 def propose(db: Session, agent: str, operation: str, inputs: dict, rationale: str) -> dict:
     if operation not in PROPOSALS:
         raise PolicyViolation("operation is not in the approved runbook catalog")
+    if contains_secret_keys(inputs):
+        raise PolicyViolation("credential material is prohibited in Agent proposals")
     ticket_id, session_id = uuid_str(), uuid_str()
     d = AgentDecision(agent=agent, ticket_id=ticket_id, session_id=session_id,
                       decision=operation, rationale=rationale[:2048],
