@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ozon-collector-overlay
+version: 0.1.0
+appVersion: '0.1.0'
+description: Compliance-gated collection API, workers and agents (external data services required)
+type: application

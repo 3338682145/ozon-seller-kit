@@ -1,0 +1,39 @@
+{{- $root := . -}}
+{{- range $name, $count := .Values.replicaCount }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $root.Release.Name }}-{{ $name }}
+  labels: {app.kubernetes.io/name: ozon-collector, app.kubernetes.io/component: {{ $name }}}
+spec:
+  replicas: {{ $count }}
+  selector:
+    matchLabels: {app.kubernetes.io/name: ozon-collector, app.kubernetes.io/component: {{ $name }}}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: ozon-collector, app.kubernetes.io/component: {{ $name }}}
+    spec:
+      containers:
+        - name: {{ $name }}
+          image: "{{ $root.Values.image.repository }}:{{ $root.Values.image.tag }}"
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          {{- if eq $name "api" }}
+          command: ["uvicorn", "collector.api:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+          ports: [{containerPort: 8000, name: http}]
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8000}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          {{- else if eq $name "worker" }}
+          command: ["python", "-m", "collector.workers.worker_cli"]
+          {{- else if eq $name "scheduler" }}
+          command: ["python", "-m", "collector.scheduler.run"]
+          {{- else if eq $name "mcp" }}
+          command: ["python", "-m", "collector.agents.mcp_server"]
+          ports: [{containerPort: 8090, name: mcp}]
+          {{- end }}
+          envFrom: [{secretRef: {name: {{ $root.Values.existingSecret }}}}]
+          resources:
+{{ toYaml $root.Values.resources | indent 12 }}
+---
+{{- end }}

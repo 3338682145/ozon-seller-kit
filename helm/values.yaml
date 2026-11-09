@@ -1,0 +1,19 @@
+image:
+  repository: registry.example.invalid/ozon-collector-overlay
+  tag: '0.1.0'
+  pullPolicy: IfNotPresent
+# REQUIRED: precreate a K8s Secret holding DATABASE_URL, REDIS_URL,
+# API_KEY, VIEWER_KEY, ADMIN_KEY, MINIO_ACCESS_KEY, MINIO_SECRET_KEY,
+# CLICKHOUSE_USER, CLICKHOUSE_PASSWORD and all approved source credentials.
+existingSecret: ozon-collector-secrets
+service:
+  port: 8000
+  type: ClusterIP
+resources:
+  requests: {cpu: 100m, memory: 256Mi}
+  limits: {cpu: '1', memory: 1Gi}
+replicaCount:
+  api: 1
+  worker: 2
+  scheduler: 1
+  mcp: 1

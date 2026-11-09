@@ -1,0 +1,28 @@
+groups:
+  - name: collection
+    rules:
+      - alert: CollectorAPIDown
+        expr: up{job="ozon-api"} == 0
+        for: 2m
+        labels: {severity: P1}
+        annotations: {summary: "Collector API unavailable", runbook: "docs/runbooks.md#api-unavailable"}
+      - alert: CollectorAPIHighErrors
+        expr: sum(rate(ozon_api_requests_total{status=~"5.."}[5m])) > 0.1
+        for: 5m
+        labels: {severity: P2}
+        annotations: {summary: "API elevated 5xx rate", runbook: "docs/runbooks.md#api-unavailable"}
+      - alert: CriticalCollectorIncident
+        expr: ozon_open_incidents{severity="P0"} > 0
+        for: 0m
+        labels: {severity: P0}
+        annotations: {summary: "P0 incident requires immediate human notification", runbook: "docs/runbooks.md#critical-incident"}
+      - alert: MajorCollectorIncident
+        expr: ozon_open_incidents{severity="P1"} > 0
+        for: 1m
+        labels: {severity: P1}
+        annotations: {summary: "P1 incident requires human notification", runbook: "docs/runbooks.md#critical-incident"}
+      - alert: CollectorWorkersMissing
+        expr: ozon_live_workers < 1
+        for: 5m
+        labels: {severity: P1}
+        annotations: {summary: "No worker heartbeat", runbook: "docs/runbooks.md#worker-not-consuming"}
