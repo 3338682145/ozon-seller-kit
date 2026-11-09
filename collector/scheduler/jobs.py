@@ -6,9 +6,23 @@ import json
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from collector.errors import PolicyViolation
-from collector.storage.models import (CollectionJob, CollectionPolicy, DataSource, JobEvent, OutboxEvent, utc_now)
+from collector.storage.models import (CollectionJob, CollectionPolicy, CredentialStatus, DataSource, JobEvent, OutboxEvent, utc_now)
 
 VALID_KINDS = {"keyword", "sku", "category", "shop", "import"}
+SECRET_KEYS = {"cookie", "token", "authorization", "password", "secret", "api_key", "set-cookie", "x-api-key", "access_token", "refresh_token"}
+
+
+def contains_secret_keys(value, *, depth: int = 0) -> bool:
+    """Fail closed on credential keys nested in task payloads, not only at root."""
+    if depth > 20:
+        return True
+    if isinstance(value, dict):
+        return any(str(k).lower().replace("-", "_") in {s.replace("-", "_") for s in SECRET_KEYS}
+                   or contains_secret_keys(v, depth=depth + 1) for k, v in value.items())
+    if isinstance(value, list):
+        return any(contains_secret_keys(v, depth=depth + 1) for v in value)
+    return False
+
 FINAL = {"completed", "canceled", "blocked", "dead_letter"}
 
 
@@ -29,7 +43,7 @@ class JobService:
     def create(self, *, source_id: str, endpoint: str, kind: str, payload: dict, batch_id: str | None = None, priority: int | None = None, idempotency_key: str | None = None) -> CollectionJob:
         if kind not in VALID_KINDS:
             raise PolicyViolation("invalid job kind")
-        if not isinstance(payload, dict) or any(k.lower() in {"cookie", "token", "authorization", "password", "secret", "api_key"} for k in payload):
+        if not isinstance(payload, dict) or contains_secret_keys(payload):
             raise PolicyViolation("credential material is prohibited in job payload")
         if priority is not None and not -10 <= priority <= 10:
             raise PolicyViolation("priority must be -10..10")
@@ -46,6 +60,12 @@ class JobService:
                 raise PolicyViolation("license/rate limit not verified")
             if source.authorization_scope != policy.authorization_scope:
                 raise PolicyViolation("authorization scope differs from verified policy")
+            if source.credential_ref:
+                status = db.get(CredentialStatus, source.credential_ref)
+                expiry = status.expires_at if status else None
+                if (not status or status.status != "active" or
+                    (expiry is not None and (expiry.replace(tzinfo=utc_now().tzinfo) if expiry.tzinfo is None else expiry) <= utc_now())):
+                    raise PolicyViolation("credential not active or expired")
             job = CollectionJob(source_id=source_id, endpoint=endpoint, kind=kind, payload=payload,
                                 fingerprint=fp, batch_id=batch_id, priority=priority if priority is not None else policy.priority)
             db.add(job)
@@ -53,6 +73,27 @@ class JobService:
             db.add(OutboxEvent(job_id=job.id, priority=job.priority))
             db.add(JobEvent(job_id=job.id, event="created", detail={"batch_id": batch_id}))
             return job
+
+    def resume_source(self, source_id: str) -> bool:
+        """Admin-only recovery of an operator pause, never auth/429/challenge bans."""
+        with self.sf.begin() as db:
+            source = db.get(DataSource, source_id)
+            if not source or source.blocked_reason not in {"operator_paused", "approved_agent_pause"}:
+                return False
+            policy = db.scalar(select(CollectionPolicy).where(CollectionPolicy.source_id == source_id,
+                                    CollectionPolicy.enabled.is_(True), CollectionPolicy.limit_verified.is_(True),
+                                    CollectionPolicy.authorization_scope == source.authorization_scope))
+            if not source.license_verified or policy is None:
+                return False
+            source.enabled, source.blocked, source.blocked_reason = True, False, None
+            # Previously paused tasks are requeued exactly once by PG outbox.
+            paused = db.scalars(select(CollectionJob).where(CollectionJob.source_id == source_id,
+                        CollectionJob.status == "blocked", CollectionJob.last_error_code == "source_blocked")).all()
+            for job in paused:
+                job.status, job.last_error_code, job.lease_owner, job.lease_expires_at = "pending", None, None, None
+                db.add(OutboxEvent(job_id=job.id, priority=job.priority))
+                db.add(JobEvent(job_id=job.id, event="resumed"))
+            return True
 
     def cancel(self, job_id: str) -> CollectionJob | None:
         with self.sf.begin() as db:
@@ -70,5 +111,5 @@ class JobService:
             source.enabled = False
             source.blocked = True
             source.blocked_reason = reason[:256]
-            db.query(CollectionJob).filter(CollectionJob.source_id == source_id, CollectionJob.status.in_(["pending", "retry_wait", "running"])).update({"status": "blocked", "last_error_code": "source_blocked"}, synchronize_session=False)
+            db.query(CollectionJob).filter(CollectionJob.source_id == source_id, CollectionJob.status.in_(["pending", "retry_wait", "running"])).update({"status": "blocked", "last_error_code": "source_blocked", "lease_owner": None, "lease_expires_at": None}, synchronize_session=False)
             return True

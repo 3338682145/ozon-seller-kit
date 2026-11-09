@@ -55,6 +55,7 @@ def mark_dead(db: Session, credential_ref: str, reason: str = "revoked") -> None
         db.add(record)
     record.status = "revoked"
     record.updated_at = utc_now()
+    db.flush()  # autoflush=False in runtime sessions; source credential_ref may have changed
     for source in db.query(DataSource).filter(DataSource.credential_ref == credential_ref):
         source.enabled, source.blocked, source.blocked_reason = False, True, "credential_revoked"
         db.query(CollectionJob).filter(CollectionJob.source_id == source.source_id, CollectionJob.status.in_(["pending", "retry_wait", "running"])).update({"status": "blocked", "last_error_code": "credential_revoked"}, synchronize_session=False)

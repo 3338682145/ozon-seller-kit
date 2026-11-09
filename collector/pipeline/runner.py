@@ -20,12 +20,17 @@ class Pipeline:
     def ingest(self, db, job_id: str, source: str, records: list[dict], version: str | None = None):
         batch = clean_records(records, source, version or self.dataset_version)
         counts = write_silver(db, batch, job_id)
-        gold = keyword_sku_metrics(batch.records, version or self.dataset_version)
+        gold = keyword_sku_metrics(batch.records, version=version or self.dataset_version)
         db.flush()  # constraint errors are surfaced before fact writes
         self.facts.write(batch.records, gold)
         return {**counts, "gold": len(gold)}
 
-    def recompute(self, db, job_id: str, source: str, object_key: str, adapter, version: str):
-        # Called with a preapproved adapter parsing contract, not a network fetch.
+    async def recompute(self, db, job_id: str, source: str, object_key: str, adapter, version: str):
+        """Replay retained Bronze through the current parser without network I/O.
+
+        Caller owns the transaction and the permission check. Version is explicit
+        so the result can be compared with, not silently overwrite, the old run.
+        """
         raw = json.loads(self.objects.get("raw-snapshots", object_key))
-        return raw  # async parse/write handled explicitly by ImportWorker
+        records = await adapter.validate(await adapter.parse(raw))
+        return self.ingest(db, job_id, source, records, version=version)

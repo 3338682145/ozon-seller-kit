@@ -1,9 +1,10 @@
 """Read-only control-plane Agent tools; no arbitrary user SQL or shell."""
 from __future__ import annotations
 from sqlalchemy import text, select, func
+from datetime import timedelta
 from collector.agents.policy import propose
 from collector.storage.models import (CollectionJob, CollectionPolicy, DataSource, Product, Keyword,
-                                      KeywordProduct, DataQualityIssue, Incident, JobEvent)
+                                      KeywordProduct, DataQualityIssue, Incident, JobEvent, WorkerHeartbeat, utc_now)
 
 
 class CollectorOperationsAgent:
@@ -37,7 +38,12 @@ class CollectorOperationsAgent:
         with self.sf() as db:
             claimed = db.scalar(select(func.count()).select_from(JobEvent).where(JobEvent.event == "claimed"))
             done = db.scalar(select(func.count()).select_from(JobEvent).where(JobEvent.event == "completed"))
-            return {"claimed_events": claimed, "completed_events": done, "live_workers": None, "note": "heartbeats not integrated"}
+            threshold = utc_now() - timedelta(seconds=90)
+            fresh = db.scalars(select(WorkerHeartbeat).where(WorkerHeartbeat.last_seen_at >= threshold)).all()
+            return {"claimed_events": claimed, "completed_events": done,
+                    "live_workers": len(fresh),
+                    "workers": [{"worker_id": w.worker_id, "state": w.state,
+                                 "last_seen_at": w.last_seen_at.isoformat()} for w in fresh]}
 
     def schedule_collection_job(self, payload: dict) -> dict:
         with self.sf.begin() as db:

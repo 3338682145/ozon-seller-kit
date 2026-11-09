@@ -28,7 +28,8 @@ class RedisStreamBroker:
                     raise
 
     async def publish(self, job_id: str, priority: int = 0):
-        return await self.redis.xadd(self.choose(priority), {"job_id": job_id}, maxlen=500000, approximate=True)
+        # Never trim a stream before every consumer-group pending entry is ACKed.
+        return await self.redis.xadd(self.choose(priority), {"job_id": job_id})
 
     async def backlog(self):
         return sum([await self.redis.xlen(s) for s in self.streams])
@@ -56,7 +57,7 @@ class RedisStreamBroker:
 
     async def ack(self, msg: Message):
         await self.redis.xack(msg.stream, self.group, msg.message_id)
-        # Trim acked stream entries deliberately elsewhere, not before PEL reclamation.
+        await self.redis.xdel(msg.stream, msg.message_id)  # prevents permanent backlog growth
 
     async def dead_letter(self, job_id: str, code: str):
         await self.redis.xadd(self.dlq, {"job_id": job_id, "error_code": code[:64]})

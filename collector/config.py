@@ -20,6 +20,7 @@ class Settings:
     clickhouse_user: str = os.getenv("CLICKHOUSE_USER", "default")
     clickhouse_password: str = os.getenv("CLICKHOUSE_PASSWORD", "")
     api_key: str = os.getenv("API_KEY", "")
+    viewer_key: str = os.getenv("VIEWER_KEY", "")
     admin_key: str = os.getenv("ADMIN_KEY", "")
     allow_insecure_dev: bool = os.getenv("ALLOW_INSECURE_DEV", "false").lower() == "true"
     vault_addr: str = os.getenv("VAULT_ADDR", "")
@@ -34,5 +35,6 @@ class Settings:
 def must_have_auth(settings: Settings) -> None:
     if not settings.allow_insecure_dev and (not settings.api_key or not settings.admin_key):
         raise RuntimeError("API_KEY and ADMIN_KEY required; ALLOW_INSECURE_DEV is test-only")
-    if settings.api_key and settings.admin_key and settings.api_key == settings.admin_key:
-        raise RuntimeError("API_KEY and ADMIN_KEY must differ")
+    configured = [k for k in (settings.api_key, settings.admin_key, settings.viewer_key) if k]
+    if len(set(configured)) != len(configured):
+        raise RuntimeError("API_KEY, VIEWER_KEY and ADMIN_KEY must be distinct")
