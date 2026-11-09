@@ -16,6 +16,7 @@ from collector.benchmark.policy import (
     BudgetExhausted,
     BudgetLimiter,
     BenchmarkPolicy,
+    PermitWaitAborted,
     load_benchmark_policy,
     require_live_authorization,
 )
@@ -26,6 +27,8 @@ CFG = os.path.join(HERE, "..", "config", "benchmark")
 
 
 class FakeClock:
+    """Fake monotonic clock whose sleep advances the clock (no real waiting)."""
+
     def __init__(self, t=1000.0):
         self.t = t
 
@@ -33,6 +36,9 @@ class FakeClock:
         return self.t
 
     def advance(self, dt):
+        self.t += dt
+
+    def sleep(self, dt):
         self.t += dt
 
 
@@ -73,83 +79,142 @@ def test_live_requires_explicit_authorization():
         require_live_authorization(live)
 
 
-# --- token bucket with fake clock -------------------------------------------
+# --- token bucket with fake clock (backpressure, not termination) -----------
+def _limiter(policy, clock):
+    return BudgetLimiter({"s": policy}, clock=clock, sleep=clock.sleep)
+
+
+class _Stop:
+    def __init__(self):
+        self.flag = False
+
+    def is_set(self):
+        return self.flag
+
+    def set(self):
+        self.flag = True
+
+
+def test_rps_exhaustion_waits_instead_of_terminating():
+    clock = FakeClock()
+    lim = _limiter(_policy(max_rps=1.0, burst=1.0), clock)
+    permits = [lim.acquire("s") for _ in range(5)]  # all granted, none lost
+    waits = [p.permit_wait_ms for p in permits]
+    assert waits[0] == 0.0            # first is instant
+    assert sum(waits[1:]) > 0.0       # later ones waited via backpressure
+
+
 def test_rps_and_burst_enforced():
+    # burst allows the first 5 instantly; the 6th waits rather than terminating
     clock = FakeClock()
-    lim = BudgetLimiter({"buyer-inventory": _policy(max_rps=2.0, burst=5.0)}, clock=clock)
-    for _ in range(5):
-        lim.acquire("buyer-inventory")  # burst allows 5
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("buyer-inventory")  # bucket empty
-    clock.advance(0.5)  # +1 token at 2 rps
-    lim.acquire("buyer-inventory")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("buyer-inventory")  # only 1 refilled
+    lim = _limiter(_policy(max_rps=2.0, burst=5.0), clock)
+    grants = [lim.acquire("s") for _ in range(5)]
+    assert all(g.permit_wait_ms == 0.0 for g in grants)
+    sixth = lim.acquire("s")  # waits for refill, does NOT raise
+    assert sixth.permit_wait_ms > 0.0
 
 
-def test_run_budget_blocks():
+def test_run_budget_still_terminal():
     clock = FakeClock()
-    lim = BudgetLimiter({"s": _policy(max_requests=3, burst=100)}, clock=clock)
+    lim = _limiter(_policy(max_requests=3, burst=100), clock)
     for _ in range(3):
         lim.acquire("s")
     with pytest.raises(BudgetExhausted):
-        lim.acquire("s")
+        lim.acquire("s")  # terminal: run budget exhausted
 
 
 def test_daily_budget_block():
     clock = FakeClock()
-    lim = BudgetLimiter({"s": _policy(max_requests_per_day=2, burst=100, max_requests=1000)}, clock=clock)
+    lim = _limiter(_policy(max_requests_per_day=2, burst=100, max_requests=1000), clock)
     lim.acquire("s"); lim.acquire("s")
     with pytest.raises(BudgetExhausted):
-        lim.acquire("s")
+        lim.acquire("s")  # terminal: daily budget
 
 
 def test_shared_budget_across_tasks():
     clock = FakeClock()
     pol = _policy(source_id="shared", burst=4.0, max_rps=100)
-    lim = BudgetLimiter({"shared": pol}, clock=clock)
-    # two "tasks" draw from the same source bucket: 4 burst, 5th refused
+    lim = BudgetLimiter({"shared": pol}, clock=clock, sleep=clock.sleep)
     for _ in range(4):
-        lim.acquire("shared")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("shared")
+        lim.acquire("shared")  # burst exhausted
+    # 5th waits (backpressure) rather than terminating
+    fifth = lim.acquire("shared")
+    assert fifth.permit_wait_ms > 0.0
+
+
+def test_concurrency_backpressure_waits_fake():
+    # deterministic fake-clock version: block until release frees a slot
+    clock = FakeClock()
+    lim = BudgetLimiter({"s": _policy(max_concurrency=1, burst=100.0, max_rps=100.0)},
+                         clock=clock, sleep=clock.sleep)
+    p1 = lim.acquire("s")
+    # p2 can't grant now; release the slot on the first sleep slice
+    state = {"released": False}
+    orig_sleep = clock.sleep
+
+    def release_sleep(dt):
+        if not state["released"]:
+            lim.release(p1)
+            state["released"] = True
+        orig_sleep(dt)
+    lim._sleep = release_sleep
+    p2 = lim.acquire("s")
+    assert state["released"] is True
+    assert p2.permit_wait_ms > 0.0
 
 
 def test_review_inventory_limits_are_isolated():
     clock = FakeClock()
-    inv = _policy(source_id="buyer-inventory", burst=2.0)
-    rev = _policy(source_id="buyer-reviews", kind="reviews", burst=1.0)
-    lim = BudgetLimiter({"buyer-inventory": inv, "buyer-reviews": rev}, clock=clock)
+    inv = _policy(source_id="buyer-inventory", burst=2.0, max_rps=100.0)
+    rev = _policy(source_id="buyer-reviews", kind="reviews", burst=1.0, max_rps=100.0)
+    lim = BudgetLimiter({"buyer-inventory": inv, "buyer-reviews": rev},
+                         clock=clock, sleep=clock.sleep)
     lim.acquire("buyer-inventory"); lim.acquire("buyer-inventory")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("buyer-inventory")
-    # reviews bucket untouched -> still works
-    lim.acquire("buyer-reviews")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("buyer-reviews")
+    # inventory 3rd waits (does not touch reviews)
+    inv3 = lim.acquire("buyer-inventory")
+    assert inv3.permit_wait_ms > 0.0
+    # reviews bucket is independent -> instant grant
+    r1 = lim.acquire("buyer-reviews")
+    assert r1.permit_wait_ms == 0.0
 
 
 def test_retries_consume_budget():
     clock = FakeClock()
-    lim = BudgetLimiter({"s": _policy(burst=2.0, max_rps=100)}, clock=clock)
+    lim = _limiter(_policy(burst=2.0, max_rps=100.0), clock)
     p1 = lim.acquire("s"); p2 = lim.acquire("s")  # tokens -> 0
     lim.release(p1); lim.release(p2)
     clock.advance(0.1)  # refill back to burst=2
-    lim.acquire("s")  # retry attempt consumes a fresh token
-    lim.acquire("s")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("s")  # exhausted
+    a = lim.acquire("s")  # retry consumes a fresh token
+    b = lim.acquire("s")
+    c = lim.acquire("s")  # waits for refill, does NOT raise
+    assert c.permit_wait_ms > 0.0
 
 
-def test_concurrency_limit_holds():
+def test_wait_interrupted_by_deadline():
     clock = FakeClock()
-    lim = BudgetLimiter({"s": _policy(max_concurrency=2, burst=100)}, clock=clock)
+    lim = _limiter(_policy(max_rps=1.0, burst=1.0), clock)
+    lim.acquire("s")  # consume the single token
+    deadline = clock.t + 0.1  # need ~1.0s at 1 rps; deadline far earlier
+    with pytest.raises(PermitWaitAborted) as ei:
+        lim.acquire("s", deadline=deadline)
+    assert ei.value.reason == "deadline"
+
+
+def test_wait_interrupted_by_stop_event():
+    clock = FakeClock()
+    lim = BudgetLimiter({"s": _policy(max_concurrency=1, burst=100.0, max_rps=100.0)},
+                        clock=clock, sleep=clock.sleep)
     p1 = lim.acquire("s")
-    p2 = lim.acquire("s")
-    with pytest.raises(BudgetExhausted):
-        lim.acquire("s")
-    lim.release(p1)
-    lim.acquire("s")  # slot freed
+    stop = _Stop()
+    # first sleep slice triggers the stop event
+    orig_sleep = clock.sleep
+    def stop_sleep(dt):
+        stop.set()
+        orig_sleep(dt)
+    lim._sleep = stop_sleep
+    with pytest.raises(PermitWaitAborted) as ei:
+        lim.acquire("s", stop_event=stop)
+    assert ei.value.reason == "stop"
 
 
 def test_example_yaml_files_are_offline_not_guessed():

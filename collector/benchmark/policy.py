@@ -131,9 +131,20 @@ class BudgetExhausted(Exception):
         self.reason = reason
 
 
+class PermitWaitAborted(Exception):
+    """Waiting for a rate/concurrency permit was interrupted by the run clock
+    or a stop event. This is NOT a terminal budget exhaustion -- the runner maps
+    it to stopped/stop, not stopped/budget."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason  # "deadline" | "stop"
+
+
 @dataclass
 class Permit:
     source_id: str
+    permit_wait_ms: float = 0.0
     token: bool = True
 
 
@@ -147,44 +158,70 @@ class _SourceState:
         self.used_day: int = 0
 
 
+_WAIT_SLICE_S = 0.05  # backpressure slice; refill on every slice
+
+
 class BudgetLimiter:
     """Per-source token bucket. Single process; a shared Redis permit is a
-    separate multi-process integration test, not this gate."""
+    separate multi-process integration test, not this gate.
+
+    Backpressure contract (spec 10.2): rps and concurrency limits WAIT (with a
+    recorded ``permit_wait_ms``) rather than terminating the run. Only a real
+    terminal budget (run / daily max_requests) or an unknown source raises
+    ``BudgetExhausted``. Waiting can be interrupted by a deadline or a stop
+    event, which raises ``PermitWaitAborted`` (distinct reason).
+    """
 
     def __init__(
         self,
         policies: Dict[str, BenchmarkPolicy],
         clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._clock = clock
+        self._sleep = sleep
         self._state = {sid: _SourceState(p) for sid, p in policies.items()}
 
-    def acquire(self, source_id: str) -> Permit:
-        st = self._state.get(source_id)
-        if st is None:
-            raise BudgetExhausted(f"unknown source {source_id}")
-        now = self._clock()
+    def _refill(self, st: _SourceState, now: float) -> None:
         if st.last == 0.0:
             st.last = now
-        # refill
         elapsed = max(0.0, now - st.last)
         st.tokens = min(st.policy.burst, st.tokens + elapsed * st.policy.max_rps)
         st.last = now
 
+    def acquire(self, source_id: str, *, deadline: Optional[float] = None,
+                stop_event: Any = None) -> Permit:
+        st = self._state.get(source_id)
+        if st is None:
+            raise BudgetExhausted(f"unknown source {source_id}")
+
+        # Terminal budgets are checked up front and after every wait slice.
         if st.used_run >= st.policy.max_requests:
             raise BudgetExhausted("run budget exhausted")
         if st.used_day >= st.policy.max_requests_per_day:
             raise BudgetExhausted("daily budget exhausted")
-        if st.in_use >= st.policy.max_concurrency:
-            raise BudgetExhausted("concurrency limit reached")
-        if st.tokens < 1.0:
-            raise BudgetExhausted("rps budget exhausted")
 
-        st.tokens -= 1.0
-        st.in_use += 1
-        st.used_run += 1
-        st.used_day += 1
-        return Permit(source_id=source_id)
+        wait_start = self._clock()
+        while True:
+            now = self._clock()
+            self._refill(st, now)
+            if st.in_use < st.policy.max_concurrency and st.tokens >= 1.0:
+                st.tokens -= 1.0
+                st.in_use += 1
+                st.used_run += 1
+                st.used_day += 1
+                return Permit(source_id=source_id,
+                              permit_wait_ms=(self._clock() - wait_start) * 1000.0)
+
+            # terminal guard during a long wait
+            if st.used_run >= st.policy.max_requests or \
+               st.used_day >= st.policy.max_requests_per_day:
+                raise BudgetExhausted("budget exhausted")
+            if deadline is not None and now >= deadline:
+                raise PermitWaitAborted("deadline")
+            if stop_event is not None and stop_event.is_set():
+                raise PermitWaitAborted("stop")
+            self._sleep(_WAIT_SLICE_S)
 
     def release(self, permit: Permit) -> None:
         st = self._state.get(permit.source_id)
