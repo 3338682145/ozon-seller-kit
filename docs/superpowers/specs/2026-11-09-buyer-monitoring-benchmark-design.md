@@ -82,3 +82,30 @@
 5. 故障语义：参考 `ozon-crawler-local` 的 ok/eof/soft_limit/blocked 分类，但不得照搬其 403 冷却重试、Cookie 获取/轮换、TLS 模拟或更换代理行为；遇访问限制停源，记录脱敏证据供人工审批。
 
 **设计验收新增：** 发布前必须有 `docs/superpowers/evidence/buyer-source-matrix.md`，逐个列出库存、评论的 Kit 源文件/函数、请求页型、字段路径、限速证据、冲突项、已批准参数及测试样本 hash。没有真实数据/授权时只能展示“未验证”，不得声称达到了 12h 在线吞吐。
+
+## 10. 12 小时测试必备日志、限速与字段验收契约（2026-11-09 补充）
+
+### 10.1 审计日志：少而必要，优先可追溯
+
+- 每次 HTTP 请求必须生成**一条终态事件**（包括超时、取消、解析错误、限速拒绝），结构化 JSONL 且只允许白名单键：`ts_utc`、`run_id`、`source_id`、`endpoint_id`、`batch_id`、`request_id`、`attempt`、`status_code`、`outcome`、`duration_ms`、`permit_wait_ms`、`response_bytes`、`observed_records`、`accepted_records`、`schema_version`、`validation_error_codes`、`raw_sha256`（仅获准保存时）、`write_status`、`reason_code`。
+- 每 15 分钟保存聚合指标：发出/拒绝/完成请求数、实际 rps、峰值并发、有效 SKU/评论条数、唯一项、空包/错误分类、P50/P95/P99、延迟趋势、CPU/内存、日志/数据库大小和源状态；结束时可复核原始事件与摘要计数。
+- **分层留存（建议默认，可被更严格的授权政策缩短）**：脱敏请求事件 30 天、15 分钟聚合 180 天、最小化样本 7 天；原始响应正文默认**不保留**，仅获明确许可后加密存入受限对象存储并设置到期清理。日志按日期/大小轮转，禁提交到 Git。
+- 不记录 Cookie、Authorization、原始 URL 查询字符串、IP/账号、评论作者、评论正文、图片和敏感异常堆栈；如事件无法持久化，标记 `failed` 并停止测试，不得继续无证据请求。
+
+### 10.2 源级限速契约
+
+- **库存、评论独立政策**：必须确认数据源、页面/端点、授权 `max_rps`、`burst`、`max_concurrency`、`min_interval_seconds`、单次 `max_requests` 与 24 小时 `max_requests_per_day`，含政策生效时间、证据来源与人工批准者。无数值默认禁用在线模式。
+- 每次请求发出前，必须原子检查预算 + 到期时刻 + 并发许可；记录 `permit_wait_ms` 和 `rejected_reason`。本轮单进程用严格本地计数与令牌桶；未来多 Worker 切换共享 Redis 许可，但**不得**按 Worker 单独放大限额。
+- 收到 401/403/429、访问挑战、越权跳转等暂停该源；不进行 Cookie 轮换、代理切换或提高请求速度。5xx 等暂态错误只在既定重试预算和限速总账范围内处理。监控/日志/存储异常触发失败停止。
+- `ozon-crawler-local` 的请求速率及端点不可用于生产配置；Kit 的历史实测也只是候选证据，需经最新授权/许可确认后填入固定政策。
+
+### 10.3 字段验证契约
+
+- **库存**：`sku` 保存为字符串、明确页型和观测时间；`stock_max` 只能进 `stock_proxy_value`，缺失为 `NULL`，0 与 `NULL` 分开；非整数、负值、来源 widget 缺失、目标 SKU 未出现在页面分别标异常，不能伪造库存 0。上限 2000 等页面截断情形要标 `capped/unknown`，不解释为物理仓储数。
+- **评论**：`sku`、观察时间、评分（若存在须 1–5）、来源页面和评论标识来源；`review_id` 缺失时不随意用作者+正文造唯一键，按疑似重复处理；正文/图片的留存要单独许可。
+- 每一批记录 `expected_count`、`parsed_count`、`valid_count`、`rejected_count`、`unknown_count`、`schema_version` 和字段缺失率；HTTP 200 + 空 widget/格式变化为 `empty_suspect` 或 `invalid`，不得伪装成功。字段映射变更必须先更新经 Kit 来源矩阵验证的 fixture 与回归测试。
+- 强制用 Kit 的库存/评论实现与**合法脱敏 golden**复核，而不是采用 crawler-local 里的未经裁决端点、库存字段或限速数据。
+
+### 10.4 附加验收
+
+离线测试必须覆盖：日志字段脱敏、每请求终态事件数对账、聚合计数与请求日志一致、日志写入失败熔断、独立接口限额/跨任务共享预算、预算耗尽拒绝、全局节流、库存 0/NULL/截断、评论 1–5 星与重复、字段漂移、200 静默空包。线上 12h 测试仍须单独得到授权且可一键停止。
