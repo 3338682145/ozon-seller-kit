@@ -1,0 +1,59 @@
+{
+  "run": {
+    "run_id": "41a105ed7cae",
+    "kind": "inventory",
+    "source_id": "buyer-inventory",
+    "mode": "live",
+    "status": "blocked",
+    "stop_reason": "live_requires_cookie_supply",
+    "started_at": "2026-11-09T15:38:01Z",
+    "stopped_at": "2026-11-09T15:38:01Z",
+    "duration_seconds": 0.01,
+    "policy_hash": "ef380cd91a9df9b48f4f3e62",
+    "policy_version": "v1",
+    "schema_version": "buyer-v2-1"
+  },
+  "totals": {
+    "requests": 0,
+    "records": 0,
+    "ok": 0,
+    "empty_valid": 0,
+    "empty_suspect": 0,
+    "blocked": 0,
+    "error": 0,
+    "valid": 0,
+    "invalid": 0,
+    "unknown": 0,
+    "bytes": 0
+  },
+  "throughput": {
+    "observed_rps": 0.0,
+    "policy_rps": 4.6,
+    "utilization": 0.0,
+    "estimate_status": "observed"
+  },
+  "latency": {
+    "p50_ms": null,
+    "p95_ms": null,
+    "p99_ms": null
+  },
+  "reconciliation": {
+    "interval_event_count": 0,
+    "event_log_count": 0,
+    "matched": true
+  },
+  "windows": [
+    {
+      "window_start": "2026-11-09T15:38:01Z",
+      "requests": 0,
+      "ok": 0,
+      "error": 0,
+      "p95_ms": null
+    }
+  ],
+  "uncertainty": [
+    "Single-process observed throughput. Do NOT linearly extrapolate to 5 Workers.",
+    "stock_proxy_max_items is a per-purchase quantity cap, not physical stock.",
+    "Conservative starting limits (20 concurrency / 30 uses-per-cookie / 4.6 rps) are estimated until a 12h approved run re-tunes them."
+  ]
+}

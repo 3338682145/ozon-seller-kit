@@ -1,0 +1,1 @@
+{"note": "live authorized=true but cookie_supply=None -> runner takes no lease, sends 0 requests, exits blocked. See report.json for run row.", "requests": 0, "events_on_disk": 0, "status": "blocked", "stop_reason": "live_requires_cookie_supply"}
