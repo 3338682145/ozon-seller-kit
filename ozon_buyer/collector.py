@@ -243,7 +243,7 @@ def request_entrypoint_page(url, creds, proxy=None):
     resp = cr.get(
         api_url,
         headers=headers,
-        impersonate="chrome124",
+        impersonate="chrome146",
         proxies=proxies,
         timeout=15,
     )
@@ -375,7 +375,7 @@ def fetch_sku_seller_info(sku_link, creds, proxy=None):
     }
 
     try:
-        resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=12)
+        resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=12)
         if resp.status_code != 200:
             return None
         data = resp.json()
@@ -445,7 +445,7 @@ def fetch_sku_reviews(sku_id, creds, proxy=None, pages=1, sort="usefulness_desc"
         rel_path = f"/product/{sku_id}/reviews/{sort_q}" + ("" if p == 1 else f"&page={p}")
         api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
         try:
-            resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
+            resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=15)
             if resp.status_code != 200:
                 break
             data = resp.json()
@@ -512,7 +512,7 @@ def fetch_sku_other_offers(sku_id, creds, proxy=None):
     api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
 
     try:
-        resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=12)
+        resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=12)
         if resp.status_code != 200:
             return None
         data = resp.json()
