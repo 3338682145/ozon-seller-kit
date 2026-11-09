@@ -1,6 +1,7 @@
 """Outbox publisher; periodic policy refresh is intentionally OFF without source targets."""
 import asyncio
 import logging
+import os
 import redis.asyncio as redis
 from collector.config import Settings
 from collector.storage.database import make_session_factory, seed_mock
@@ -19,16 +20,19 @@ async def main():
     broker = RedisStreamBroker(r, cfg.stream, cfg.group, cfg.dlq)
     await broker.setup()
     publisher = Publisher(sf, broker, cfg.max_queue_backlog)
-    freshness = FreshnessScheduler(sf)
+    # When Crawlab owns recurring batch schedules, the native freshness
+    # scheduler must not independently create overlapping collections.
+    freshness_enabled = os.getenv("ENABLE_FRESHNESS_SCHEDULER", "true").lower() == "true"
+    freshness = FreshnessScheduler(sf) if freshness_enabled else None
     ticks = 0
     while True:
         try:
             await publisher.flush()
-            if ticks % 60 == 0:
+            if freshness is not None and ticks % 60 == 0:
                 freshness.tick()
             ticks += 1
         except Exception:
-            logging.exception("outbox failed; will retry without acknowledging rows")
+            logging.error("outbox failed; retry later without acknowledging (details suppressed)")
         await asyncio.sleep(1)
 
 

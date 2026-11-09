@@ -8,3 +8,8 @@ __pycache__
 .venv
 local-*
 data/toys-slim.db
+# Never package local Supabase, Metabase or runtime secrets into Docker images.
+.env.*
+!.env.example
+!.env.metabase.example
+!.env.crawlab-supabase.example

@@ -1,7 +1,7 @@
 """Alembic migrations: only DATABASE_URL controls the target."""
 from logging.config import fileConfig
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import engine_from_config, pool, event
 import os
 from collector.storage.models import Base
 
@@ -20,6 +20,12 @@ def offline():
 
 def online():
     engine = engine_from_config(config.get_section(config.config_ini_section), prefix="sqlalchemy.", poolclass=pool.NullPool)
+    if os.getenv("COLLECTOR_PG_SCHEMA") == "collector_core" and engine.dialect.name == "postgresql":
+        @event.listens_for(engine, "connect")
+        def _migration_search_path(dbapi_connection, _connection_record):
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SET SESSION search_path TO collector_core, public")
+            dbapi_connection.commit()
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
         with context.begin_transaction():

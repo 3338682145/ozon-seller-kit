@@ -1,7 +1,8 @@
 """Connections and schema seeding. create_all is only for local unit tests."""
 from __future__ import annotations
 
-from sqlalchemy import create_engine, select
+import os
+from sqlalchemy import create_engine, select, event
 from sqlalchemy.orm import sessionmaker
 from collector.storage.models import Base, DataSource, CollectionPolicy
 
@@ -9,6 +10,15 @@ from collector.storage.models import Base, DataSource, CollectionPolicy
 def make_session_factory(url: str, *, test_schema: bool = False):
     extra = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {"pool_pre_ping": True}
     engine = create_engine(url, future=True, **extra)
+    if os.getenv("COLLECTOR_PG_SCHEMA") == "collector_core" and url.startswith("postgresql"):
+        # Supabase/Supavisor session pooler can ignore startup `options`.
+        # Force the private schema on EACH physical connection and verify it
+        # separately before serving requests. Do not use transaction pooler.
+        @event.listens_for(engine, "connect")
+        def _private_schema(dbapi_connection, _connection_record):
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SET SESSION search_path TO collector_core, public")
+            dbapi_connection.commit()
     if test_schema:
         Base.metadata.create_all(engine)
     return sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)

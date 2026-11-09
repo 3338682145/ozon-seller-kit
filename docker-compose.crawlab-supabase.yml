@@ -1,0 +1,173 @@
+name: ozon-crawlab-supabase
+
+# Standalone deployment: NO local PostgreSQL, no duplicate business DB.
+# Supabase PostgreSQL owns all collector_core job + product entities.
+# Crawlab schedules batches ONLY; Redis Streams consumes inner jobs.
+x-app-env: &app-env
+  DATABASE_URL: ${SUPABASE_DATABASE_URL:?provide an SSL-encrypted, least-privilege Supabase URL}
+  COLLECTOR_PG_SCHEMA: collector_core
+  REDIS_URL: redis://redis:6379/0
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?required}
+  MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?required}
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_USER: ${CLICKHOUSE_USER:?required}
+  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?required}
+  API_KEY: ${API_KEY:?required}
+  VIEWER_KEY: ${VIEWER_KEY:?required}
+  ADMIN_KEY: ${ADMIN_KEY:?required}
+  ALLOW_INSECURE_DEV: "false"
+  SAMPLE_PATH: samples/mock_collection.json
+  DATASET_VERSION: ${DATASET_VERSION:-mock-v1}
+  MAX_QUEUE_BACKLOG: ${MAX_QUEUE_BACKLOG:-10000}
+
+x-app: &app
+  build: .
+  environment: *app-env
+  networks: [collector_data]
+  restart: unless-stopped
+
+services:
+  # The only MongoDB belongs to Crawlab's internal control plane.
+  # It has no published ports and no connection to collector_data.
+  crawlab-mongo:
+    image: mongo:6
+    volumes: [crawlab_mongo_data:/data/db]
+    networks: [crawlab_private]
+    restart: unless-stopped
+
+  crawlab:
+    image: ${CRAWLAB_IMAGE:-crawlabteam/crawlab:latest}
+    environment:
+      CRAWLAB_NODE_MASTER: "Y"
+      CRAWLAB_MONGO_HOST: crawlab-mongo
+      CRAWLAB_API_URL: http://api:8000
+      CRAWLAB_API_KEY: ${API_KEY:?required}
+    depends_on: [crawlab-mongo, api]
+    ports: ["127.0.0.1:8080:8080"]
+    volumes:
+      - crawlab_data:/root/.crawlab
+      - ./scripts/crawlab_submit.py:/opt/ozon/bridge.py:ro
+      - ./samples/crawlab_batch_mock.json:/opt/ozon/approved_batch.json:ro
+    networks: [crawlab_private, crawlab_bridge]
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 15
+    networks: [collector_data]
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?required}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?required}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./sql/clickhouse/001_facts.sql:/docker-entrypoint-initdb.d/001_facts.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD -q 'SELECT 1'"]
+      interval: 10s
+      retries: 20
+    networks: [collector_data]
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-07T23-21-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?required}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?required}
+    volumes: [minio_data:/data]
+    networks: [collector_data]
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-02-08T19-14-21Z
+    depends_on: [minio]
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:?required}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:?required}
+    entrypoint: ["/bin/sh", "-ec"]
+    command: >-
+      until mc alias set local http://minio:9000 "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"; do sleep 2; done;
+      mc mb --ignore-existing local/raw-snapshots;
+      mc mb --ignore-existing local/failed-records;
+      mc mb --ignore-existing local/exports;
+      mc mb --ignore-existing local/archives;
+    networks: [collector_data]
+    restart: "no"
+
+  # Migration is an explicit, one-off operator action with separate credentials.
+  # Never give the production API/Worker the migration DB URL.
+  db-migrate:
+    build: .
+    profiles: ["bootstrap"]
+    environment:
+      DATABASE_URL: ${SUPABASE_MIGRATION_DATABASE_URL:-}
+      COLLECTOR_PG_SCHEMA: collector_core
+    command:
+      - sh
+      - -ec
+      - >-
+        test -n "$$DATABASE_URL" || { echo 'migration database URL is missing'; exit 2; };
+        python scripts/supabase/verify_connection.py --allow-admin;
+        alembic upgrade head
+    networks: [collector_data]
+    restart: "no"
+
+  api:
+    <<: *app
+    command:
+      - sh
+      - -ec
+      - >-
+        python scripts/supabase/verify_connection.py --check-remote &&
+        python -c "from collector.config import Settings; from collector.storage.database import make_session_factory, seed_mock; seed_mock(make_session_factory(Settings().database_url))" &&
+        exec uvicorn collector.api:create_app --factory --host 0.0.0.0 --port 8000
+    depends_on:
+      redis: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    ports: ["127.0.0.1:8000:8000"]
+    networks: [collector_data, crawlab_bridge]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 10s
+      retries: 12
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "collector.workers.worker_cli"]
+    depends_on:
+      api: {condition: service_healthy}
+
+  # Outbox publisher only; freshness scheduler OFF because Crawlab owns cron.
+  publisher:
+    <<: *app
+    environment:
+      <<: *app-env
+      ENABLE_FRESHNESS_SCHEDULER: "false"
+    command: ["python", "-m", "collector.scheduler.run"]
+    depends_on:
+      api: {condition: service_healthy}
+
+networks:
+  crawlab_private: {}
+  crawlab_bridge: {}
+  collector_data: {}
+
+volumes:
+  crawlab_mongo_data: {}
+  crawlab_data: {}
+  redis_data: {}
+  minio_data: {}
+  clickhouse_data: {}

@@ -154,6 +154,36 @@ def create_app(*, settings: Settings | None = None, session_factory=None) -> Fas
         job = jobs.create(**data.model_dump(), idempotency_key=idempotency_key)
         return {"id": job.id, "status": job.status, "source_id": job.source_id, "created_at": job.created_at}
 
+    @app.get("/api/v1/batches/{batch_id}", dependencies=[Depends(reader)])
+    def get_batch_status(batch_id: str):
+        """Crawlab batch visibility. PostgreSQL is the only job-status authority.
+
+        Never return task payloads, cookies or raw product data to Crawlab.
+        Empty/unknown batches return 404; a failed child is not reported as
+        a successful batch merely because the submit script has finished.
+        """
+        with sf() as db:
+            counts = dict(db.execute(
+                select(CollectionJob.status, func.count(CollectionJob.id))
+                .where(CollectionJob.batch_id == batch_id)
+                .group_by(CollectionJob.status)
+            ).all())
+        total = sum(counts.values())
+        if not total:
+            raise HTTPException(status_code=404, detail="batch not found")
+        done = counts.get("completed", 0)
+        failed = sum(counts.get(k, 0) for k in ("blocked", "dead_letter", "canceled"))
+        if done == total:
+            status = "completed"
+        elif done + failed == total:
+            status = "failed" if done == 0 else "partial"
+        else:
+            status = "running"
+        return {"batch_id": batch_id, "status": status, "total": total,
+                "completed": done, "failed": failed,
+                "pending": total - done - failed,
+                "by_status": {k: counts.get(k, 0) for k in JOB_STATES}}
+
     @app.get("/api/v1/jobs/{job_id}", dependencies=[Depends(reader)])
     def get_job(job_id: str):
         with sf() as db:
