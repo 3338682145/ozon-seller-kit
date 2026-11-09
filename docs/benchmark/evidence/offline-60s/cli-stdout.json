@@ -1,1 +1,1 @@
-{"run_id": "0613c3207d20", "status": "stopped", "stop_reason": "budget:rps budget exhausted", "requests": 11, "intervals": 1, "mode": "offline", "out_dir": "docs/benchmark/evidence/offline-60s"}
+{"run_id": "a1f8e40ed070", "status": "completed", "stop_reason": "natural_time_limit", "requests": 284, "intervals": 1, "mode": "offline", "out_dir": "docs/benchmark/evidence/offline-60s"}

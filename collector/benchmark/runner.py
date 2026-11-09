@@ -36,6 +36,7 @@ from collector.benchmark.policy import (
     BudgetExhausted,
     BudgetLimiter,
     BenchmarkPolicy,
+    PermitWaitAborted,
 )
 from collector.benchmark.store import BenchmarkStore
 from collector.benchmark.cookie_supply import CookieSupply, PoolEmpty
@@ -111,7 +112,7 @@ def run_experiment(
     requests = 0
     consecutive_blocked = 0
     status = "completed"
-    stop_reason = "duration_elapsed"
+    stop_reason = "natural_time_limit"
     failed = False
 
     def flush_window(force: bool = False) -> None:
@@ -152,9 +153,19 @@ def run_experiment(
                 status, stop_reason = "blocked", "three_consecutive_blocked_tickets"
                 break
 
-            # Acquire permit BEFORE doing any work.
+            # Acquire permit BEFORE doing any work. The limiter WAITS (with a
+            # recorded permit_wait_ms) when rps/concurrency backpressure
+            # applies; it only raises BudgetExhausted on terminal run/day
+            # budgets. A deadline or stop_event aborts the wait cleanly.
             try:
-                permit = limiter.acquire(policy.source_id)
+                permit = limiter.acquire(
+                    policy.source_id, deadline=deadline, stop_event=stop_event)
+            except PermitWaitAborted as e:
+                if e.reason == "deadline":
+                    status, stop_reason = "completed", "natural_time_limit"
+                else:
+                    status, stop_reason = "stopped", "manual_stop"
+                break
             except BudgetExhausted as e:
                 status, stop_reason = "stopped", f"budget:{e.reason}"
                 break
@@ -225,7 +236,8 @@ def run_experiment(
                 request_id=uuid.uuid4().hex[:12], attempt=requests,
                 status_code=status_code, outcome=outcome,
                 duration_ms=round(duration_s * 1000.0, 3),
-                permit_wait_ms=0.0, response_bytes=raw_bytes,
+                permit_wait_ms=round(permit.permit_wait_ms, 3),
+                response_bytes=raw_bytes,
                 observed_records=n_records, accepted_records=accepted,
                 schema_version=SCHEMA_VERSION, validation_error_codes=[],
                 write_status="written", reason_code=reason_code,
@@ -246,7 +258,7 @@ def run_experiment(
             unknown = n_records - valid - invalid
             metrics.record(
                 outcome=outcome, duration_seconds=duration_s, records=n_records,
-                bytes_received=raw_bytes, permit_wait_ms=0.0,
+                bytes_received=raw_bytes, permit_wait_ms=permit.permit_wait_ms,
                 valid=valid, invalid=invalid, unknown=unknown,
             )
 

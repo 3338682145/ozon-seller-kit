@@ -272,3 +272,97 @@ def test_errors_do_not_auto_increase_rate(tmp_path):
     lim = BudgetLimiter({policy.source_id: policy}, clock=FakeClock())
     # burn a few attempts with errors; the bucket still respects the same cap.
     assert lim._state[policy.source_id].policy.max_rps == policy.max_rps
+
+
+# --- permit-wait integration (post-eb107d3) ---------------------------------
+def _waiting_limiter(policy, clock):
+    """A BudgetLimiter whose sleep ADVANCES the fake clock, so token-bucket
+    backpressure is fake-clock testable without real wall-time waits."""
+    return BudgetLimiter(
+        {policy.source_id: policy},
+        clock=clock,
+        sleep=lambda dt: clock.advance(dt),
+    )
+
+
+def test_one_minute_offline_run_reaches_duration(tmp_path):
+    store, evlog, body, policy = _setup(
+        tmp_path, max_rps=4.6, burst=8.0, max_concurrency=20,
+        duration_seconds=60, max_requests=10_000_000,
+    )
+    clock = FakeClock(0.0)
+    limiter = _waiting_limiter(policy, clock)
+    tr = FixtureTransport(body)
+    metrics = BenchmarkMetrics(source_id=policy.source_id, kind="inventory",
+                               max_rps=policy.max_rps)
+    summary = run_experiment(
+        policy, transport=tr, store=store, event_log=evlog, metrics=metrics,
+        clock=clock, wall_now=_wall, page_paths=["/p"],
+        wanted_skus={"111222333", "444555666", "777888999"},
+        budget_limiter=limiter,
+    )
+    # burst=8 + 4.6 rps * 60s ~= 284; accept >=250.
+    assert summary.requests >= 250
+    assert summary.status == "completed"
+    assert summary.stop_reason == "natural_time_limit"
+    # reconciliation holds over the whole run
+    assert evlog.reconcile(summary.run_id, summary.requests)
+
+
+def test_sigterm_during_permit_wait_is_stopped(tmp_path):
+    store, evlog, body, policy = _setup(
+        tmp_path, max_rps=0.001, burst=1.0, max_concurrency=1,
+        duration_seconds=600, max_requests=10_000_000,
+    )
+    clock = FakeClock(0.0)
+    limiter = _waiting_limiter(policy, clock)
+    tr = FixtureTransport(body)
+    metrics = BenchmarkMetrics(source_id=policy.source_id, kind="inventory",
+                               max_rps=policy.max_rps)
+    stop = threading.Event()
+    # First acquire burns the single burst token; the next acquire blocks on
+    # the (near-zero) refill. Set the stop event mid-wait.
+    orig_acquire = limiter.acquire
+    calls = {"n": 0}
+
+    def counting_acquire(sid, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            stop.set()
+        return orig_acquire(sid, **kw)
+
+    limiter.acquire = counting_acquire  # type: ignore
+    summary = run_experiment(
+        policy, transport=tr, store=store, event_log=evlog, metrics=metrics,
+        clock=clock, wall_now=_wall, page_paths=["/p"],
+        wanted_skus={"111222333"}, budget_limiter=limiter,
+        stop_event=stop,
+    )
+    assert summary.status == "stopped"
+    assert summary.stop_reason == "manual_stop"
+    # exactly one request went out before the wait aborted
+    assert summary.requests == 1
+
+
+def test_permit_wait_ms_present_in_events(tmp_path):
+    store, evlog, body, policy = _setup(
+        tmp_path, max_rps=1.0, burst=1.0, max_concurrency=1,
+        duration_seconds=60, max_requests=10_000_000,
+    )
+    clock = FakeClock(0.0)
+    limiter = _waiting_limiter(policy, clock)
+    tr = FixtureTransport(body)
+    metrics = BenchmarkMetrics(source_id=policy.source_id, kind="inventory",
+                               max_rps=policy.max_rps)
+    summary = run_experiment(
+        policy, transport=tr, store=store, event_log=evlog, metrics=metrics,
+        clock=clock, wall_now=_wall, page_paths=["/p"],
+        wanted_skus={"111222333"}, budget_limiter=limiter,
+        max_attempts=2,
+    )
+    assert summary.requests == 2
+    events = evlog._read_run_events(summary.run_id)
+    by_attempt = {e["attempt"]: e for e in events}
+    # first request takes the burst token -> ~0 wait; second waits for refill
+    assert by_attempt[1]["permit_wait_ms"] < 5.0
+    assert by_attempt[2]["permit_wait_ms"] > 0.0

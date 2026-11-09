@@ -1,23 +1,23 @@
-# Buyer Benchmark Report — 0613c3207d20
+# Buyer Benchmark Report — a1f8e40ed070
 
-- mode: `offline`  status: **stopped**  kind: `inventory`  source: `buyer-inventory`
-- window: 2026-11-09T15:37:00Z → 2026-11-09T15:37:00Z (0.866s)
+- mode: `offline`  status: **completed**  kind: `inventory`  source: `buyer-inventory`
+- window: 2026-11-09T15:50:05Z → 2026-11-09T15:51:05Z (60.097s)
 - policy_version: `v1`  schema_version: `buyer-v2-1`
 
 ## Totals
-- requests: 11  records: 33  bytes: 18898
-- ok: 11  empty_valid: 0  empty_suspect: 0  blocked: 0  error: 0
-- valid: 33  invalid: 0  unknown: 0
+- requests: 284  records: 852  bytes: 487912
+- ok: 284  empty_valid: 0  empty_suspect: 0  blocked: 0  error: 0
+- valid: 852  invalid: 0  unknown: 0
 
 ## Throughput (single process, observed)
-- observed_rps: 12.6985  policy_rps cap: 4.6  utilization: 2.7605
+- observed_rps: 4.7257  policy_rps cap: 4.6  utilization: 1.0273
 
 ## Reconciliation
-- interval audit_event_count sum: 11
-- terminal event log count: 11  matched: **True**
+- interval audit_event_count sum: 284
+- terminal event log count: 284  matched: **True**
 
 ## Windows
-- 2026-11-09T15:37:00Z: requests=11 ok=11 error=0 p95_ms=0.013
+- 2026-11-09T15:50:05Z: requests=284 ok=284 error=0 p95_ms=0.016
 
 ## Uncertainty
 
