@@ -1,0 +1,67 @@
+# Overlay: docker compose --env-file .env --env-file .env.metabase \
+#   -f docker-compose.yml -f docker-compose.metabase.yml --profile analytics up -d
+services:
+  metabase-pg-init:
+    image: postgres:16-alpine
+    profiles: [analytics]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+      POSTGRES_DB: ${POSTGRES_DB:?required}
+      MB_APP_DB_NAME: ${MB_APP_DB_NAME:-metabase_app}
+      MB_APP_DB_USER: ${MB_APP_DB_USER:-metabase_app}
+      MB_APP_DB_PASSWORD: ${MB_APP_DB_PASSWORD:?required}
+      MB_READER_USER: ${MB_READER_USER:-metabase_reader}
+      MB_READER_PASSWORD: ${MB_READER_PASSWORD:?required}
+    entrypoint: ["/bin/sh", "/metabase/init_postgres.sh"]
+    volumes:
+      - ./sql/metabase/010_pg_analytics.sql:/metabase/010_pg_analytics.sql:ro
+      - ./sql/metabase/020_pg_roles.psql:/metabase/020_pg_roles.psql:ro
+      - ./scripts/metabase/init_postgres.sh:/metabase/init_postgres.sh:ro
+    depends_on:
+      api: {condition: service_healthy}
+    networks: [internal]
+    restart: "no"
+
+  metabase-ch-init:
+    image: clickhouse/clickhouse-server:24.8
+    profiles: [analytics]
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:?required}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?required}
+      MB_CH_READER_PASSWORD: ${MB_CH_READER_PASSWORD:?required}
+    entrypoint: ["/bin/sh", "/metabase/init_clickhouse.sh"]
+    volumes:
+      - ./sql/metabase/030_clickhouse_views.sql:/metabase/030_clickhouse_views.sql:ro
+      - ./scripts/metabase/init_clickhouse.sh:/metabase/init_clickhouse.sh:ro
+    depends_on:
+      clickhouse: {condition: service_healthy}
+    networks: [internal]
+    restart: "no"
+
+  metabase:
+    image: metabase/metabase:v0.64.1
+    profiles: [analytics]
+    restart: unless-stopped
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: "5432"
+      MB_DB_DBNAME: ${MB_APP_DB_NAME:-metabase_app}
+      MB_DB_USER: ${MB_APP_DB_USER:-metabase_app}
+      MB_DB_PASS: ${MB_APP_DB_PASSWORD:?required}
+      MB_ENCRYPTION_SECRET_KEY: ${MB_ENCRYPTION_SECRET_KEY:?required}
+      MB_SITE_URL: ${MB_SITE_URL:-http://localhost:3001}
+      MB_LOAD_SAMPLE_CONTENT: "false"
+      JAVA_OPTS: "-Xmx1g"
+      JAVA_TIMEZONE: UTC
+    ports: ["127.0.0.1:${MB_PORT:-3001}:3000"]
+    depends_on:
+      metabase-pg-init: {condition: service_completed_successfully}
+      metabase-ch-init: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 20s
+      retries: 20
+      start_period: 120s
+    networks: [internal]
