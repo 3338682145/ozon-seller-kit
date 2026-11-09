@@ -1,0 +1,9 @@
+{
+  "source": "licensed-sample-mock",
+  "schema_version": "1.0",
+  "records": [
+    {"sku": "101001", "title": "Антистресс мяч", "price": "299,90 ₽", "keyword": "Антистресс  мяч", "position": 1, "is_advert": false, "soldCount": 20, "gmvSum": "5998,00", "redemptionRate": 90, "observed_at": "2026-11-08T10:00:00+00:00"},
+    {"sku": "101002", "title": "Набор игрушек", "price": "499 ₽", "keyword": "антистресс мяч", "position": 2, "is_advert": true, "soldCount": 10, "gmvSum": "4990", "redemptionRate": null, "observed_at": "2026-11-08T10:00:00+00:00"},
+    {"sku": "101003", "title": "Сквиши", "price": "199,50 ₽", "keyword": "Сквиши набор", "position": 5, "is_advert": null, "observed_at": "2026-11-08T10:00:00+00:00"}
+  ]
+}
