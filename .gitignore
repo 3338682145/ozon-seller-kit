@@ -21,3 +21,6 @@ __pycache__/
 .venv/
 backups/
 dist/
+
+# Supabase private connection secrets (never commit)
+.env.crawlab-supabase

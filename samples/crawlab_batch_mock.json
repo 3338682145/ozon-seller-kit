@@ -1,0 +1,4 @@
+[
+  {"source_id":"mock","endpoint":"sample","kind":"keyword","payload":{"keyword":"антистресс"},"priority":0},
+  {"source_id":"mock","endpoint":"sample","kind":"sku","payload":{"sku":"101001"},"priority":0}
+]
