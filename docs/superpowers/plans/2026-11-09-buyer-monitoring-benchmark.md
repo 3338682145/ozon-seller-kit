@@ -21,6 +21,8 @@
 - 12 小时是**测试持续时间**，不是保证的采集量；本轮只用单个测试进程，5 Worker 规模与 ClickHouse 正式数据模型留后续。
 - 原始评价/图片可能涉及用户内容，遵守授权/数据最小化与保留期；运行日志不得含 URL token、Cookie、账号信息、完整响应或个人信息。
 - 每项任务遵守 TDD：先失败测试、后最小实现、再运行 tests、最后提交；无环境不冒充已通过真实联调。
+- **日志、限速、字段验证为阻断项**：每个请求均有可追溯的唯一终态事件；各接口都有全局固定限额；字段漂移和可疑空包不得计入有效采集。日志、数据或监控不能持久化时必须停止发请求。
+- **留存建议**：脱敏 JSONL 30 天、15 分钟汇总 180 天、最小匿名样本 7 天；由更严格的授权政策覆盖。原始响应默认不存。
 
 ## Review Focus
 
@@ -31,6 +33,16 @@
 5. **敏感信息进入日志或报告**：输出仅允许白名单字段 → Task 2 `test_event_never_serializes_secret_fields`，Task 6 `test_report_has_no_raw_personal_data`。
 
 ---
+
+## Runtime Contract：最小可验收要求（T1–T8）
+
+**持久化日志（T2/T5）**：每次 HTTP 调用（成功、失败、超时、限流拒绝、取消）都要有单独 `RequestAuditEvent`，终态唯一键 `run_id+request_id+attempt`。仅存 `ts_utc,run_id,batch_id,request_id,source_id,endpoint_id,attempt,status_code,outcome,duration_ms,permit_wait_ms,response_bytes,observed_records,accepted_records,schema_version,validation_error_codes,write_status,reason_code`；许可后可选 `raw_sha256`。不能写 Cookie、token、URL 查询串、用户评论正文/作者、异常原文。JSONL 按日期或大小轮转，保留期结束自动清理；失败停源。15 分钟 `BenchmarkInterval` 与请求事件总数必须对账。
+
+**独立限速（T3/T7）**：库存、评论各有经授权核实的 `max_rps,burst,max_concurrency,min_interval_seconds,max_requests,max_requests_per_day,allowed_endpoint,license_ref,policy_version`。每次调用前原子领取许可，重试也计入限额。当前只有单测试进程；未来 5 Worker 必须共享同一源级限额，不可按 Worker 倍增。无许可证据和已审批数值时，online 模式 fail-closed。
+
+**字段契约（T1/T4/T6）**：库存 `sku` 为 TEXT、采集时刻为 UTC、来源页型必填；`stock_max` 是 nullable int 代理量，0 与 NULL 不可混淆，负数/非数字无效，2000 上限要标 `is_capped` 不能称为物理库存。评论 score 存在时须在 1–5，review_id 可空但不得凭作者/正文虚构去重键。按批记录 `expected_count,parsed_count,valid_count,invalid_count,unknown_count,schema_version,missing_field_rates`。缺失 widget、格式漂移或 200 静默空包标记为 `empty_suspect/invalid`，不当成功。
+
+**测试通过条件（T6–T8）**：离线用例分别证明速率/并发/日预算不会超限、日志无敏感数据、每次请求都有终态、聚合可对账、存储故障会终止、库存 0/NULL/封顶语义正确、评论异常值被隔离。真实 12h 测试另需授权与已验证的告警链路。
 
 ## File Map
 
@@ -60,9 +72,9 @@
 - Produces `InventoryObservation(sku, page_path, source, region, observed_at, stock_proxy_value, raw_field_path)` and `ReviewObservation(sku, review_id, score, observed_at, source)` (no personal identifiers required).
 - Produces `validate_inventory_record(data: dict) -> InventoryObservation` and `validate_review_record(data: dict) -> ReviewObservation`; missing fields stay `None`.
 
-- [ ] **Step 1: Write failing contract tests.** `tests/test_buyer_contract.py` contains `test_stock_max_is_proxy_not_physical` (input `maxItems=2000`, output `stock_proxy_value==2000`, `physical_stock is absent`) and `test_unknown_stock_stays_null` (missing `maxItems` → `stock_proxy_value is None`).
+- [ ] **Step 1: Write failing contract tests.** `tests/test_buyer_contract.py` contains `test_stock_max_is_proxy_not_physical` (input `maxItems=2000`, output `stock_proxy_value==2000`, `physical_stock is absent`) and `test_unknown_stock_stays_null` (missing `maxItems` → `stock_proxy_value is None`). Add `test_noninteger_or_negative_stock_invalid`, `test_capped_inventory_is_not_physical`, `test_review_score_range_and_null`, and `test_missing_review_id_does_not_invent_dedupe_key`.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_contract.py` and confirm tests FAIL (missing module/contracts).
-- [ ] **Step 3: Create** `contracts.py` dataclasses and normalization validators. Document **Kit** path/func (`ozon_buyer/collector.py:extract_skus_from_page`, `ozon_buyer/http.py:parse_tile`, `ozon_buyer/detail.py:parse_reviews`), actual query/page contexts and ambiguous alternatives; write two synthetic sanitized fixtures matching known Kit widget structure. List `ozon-crawler-local/docs/api/C01-buyer-entrypoint-widget.md` as secondary reference only. Link source commit and fixture SHA256. Explicitly disallow assuming a SKU-only PDP contains listing-page stock.
+- [ ] **Step 3: Create** `contracts.py` dataclasses and normalization validators with `schema_version`, `field_status`, `is_capped` and batch quality counters. Document **Kit** path/func (`ozon_buyer/collector.py:extract_skus_from_page`, `ozon_buyer/http.py:parse_tile`, `ozon_buyer/detail.py:parse_reviews`), actual query/page contexts and ambiguous alternatives; write two synthetic sanitized fixtures matching known Kit widget structure. List `ozon-crawler-local/docs/api/C01-buyer-entrypoint-widget.md` as secondary reference only. Link source commit and fixture SHA256. Explicitly disallow assuming a SKU-only PDP contains listing-page stock.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_contract.py` and confirm PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/__init__.py collector/benchmark/contracts.py tests/test_buyer_contract.py samples/benchmark docs/superpowers/evidence && git commit -m "test: lock buyer inventory and review data contracts"`.
 
@@ -75,11 +87,12 @@
 **Interfaces:**
 - Consumes `HTTP status`, `response content-type`, `parsed envelope`, `expected widget kind` (not authenticated headers).
 - Produces `classify_buyer_response(status_code: int, content_type: str, body: object, kind: str) -> Outcome`, where Outcome is `ok | empty_valid | empty_suspect | blocked | transient_error | invalid`.
-- Produces `safe_event_dict(*, run_id: str, source_id: str, elapsed_ms: float, outcome: str, status_code: int | None, records: int) -> dict` (strict field whitelist).
+- Produces `safe_event_dict(event: RequestAuditEvent) -> dict` (only the Runtime Contract whitelist; no URL, headers, response bodies, authors or secrets).
+- Produces `EventLog.append(event: RequestAuditEvent) -> None` and `EventLog.reconcile(run_id: str, expected_attempts: int) -> bool` (rotated, durable JSONL; one terminal event per attempt; fail-closed).
 
-- [ ] **Step 1: Write failing tests** for 200+valid tile, 200+valid explicit EOF, 200+missing widget, 403/429/redirect/challenge, invalid JSON, 5xx; assert ambiguous empty = `empty_suspect` and access-restricted = `blocked`. Test a response containing `cookie`, `authorization`, token-bearing URL and review author does not appear in event serialization.
+- [ ] **Step 1: Write failing tests** for 200+valid tile, 200+valid explicit EOF, 200+missing widget, 403/429/redirect/challenge, invalid JSON, 5xx; assert ambiguous empty = `empty_suspect` and access-restricted = `blocked`. Test a response containing `cookie`, `authorization`, token-bearing URL and review author does not appear in event serialization. Add `test_one_terminal_event_per_attempt`, `test_log_write_failure_halts_run`, and `test_log_interval_count_reconciliation`.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_outcomes.py` to observe FAIL.
-- [ ] **Step 3: Implement** classification using existing `collector/errors.py` safety semantics; only accept `empty_valid` with explicit terminal evidence from Kit fixtures; all ambiguous empties fail closed. JSONL event writer only serializes `safe_event_dict` (no raw exception text).
+- [ ] **Step 3: Implement** classification using existing `collector/errors.py` safety semantics; only accept `empty_valid` with explicit terminal evidence from Kit fixtures; all ambiguous empties fail closed. JSONL event writer only serializes `safe_event_dict` (no raw exception text); rotates by day/size, 30-day-or-shorter retention; a failed append raises `StorageUnavailable`.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_outcomes.py` to PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/outcomes.py collector/benchmark/events.py tests/test_buyer_outcomes.py && git commit -m "feat: classify and sanitise buyer benchmark events"`.
 
@@ -91,12 +104,13 @@
 - Create: `tests/test_buyer_policy.py`
 
 **Interfaces:**
-- Produces `load_benchmark_policy(path: str, mode: str) -> BenchmarkPolicy` with `source_id`, `kind`, `allowed_endpoint`, `max_rps`, `max_concurrency`, `max_requests`, `duration_seconds`, `license_ref`, `retention`, `mode`.
+- Produces `load_benchmark_policy(path: str, mode: str) -> BenchmarkPolicy` with `source_id`, `kind`, `allowed_endpoint`, `max_rps`, `burst`, `max_concurrency`, `min_interval_seconds`, `max_requests`, `max_requests_per_day`, `duration_seconds`, `license_ref`, `retention`, `mode`, `policy_version`.
 - Produces `require_live_authorization(policy: BenchmarkPolicy) -> None`; when mode=live and explicit verified policy fields are absent, raises `PolicyViolation`.
+- Produces `BudgetLimiter.acquire(source_id: str, *, clock) -> Permit` and `BudgetLimiter.release(permit: Permit) -> None`, recording wait and refusal reason.
 
-- [ ] **Step 1: Write failing tests**: no live budget/no permission/unapproved endpoint is rejected; offline works without network; 403/429 causes permanent source stop for that run; no retry or automatic rate increase; policy is separate for inventory and reviews.
+- [ ] **Step 1: Write failing tests**: no live budget/no permission/unapproved endpoint is rejected; offline works without network; 403/429 causes permanent source stop for that run; no retry or automatic rate increase; policy is separate for inventory and reviews. Add fake-clock tests `test_rps_and_burst_enforced`, `test_run_and_daily_budget_block`, `test_shared_budget_across_tasks`, `test_review_inventory_limits_are_isolated`, and `test_retries_consume_budget`.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_policy.py` to FAIL.
-- [ ] **Step 3: Implement** validation and typed policy. YAML examples contain **no guessed numerical online limits**; online values must be copied from Kit evidence + verified licensed policy, with `authorized: false` by default. Shared Redis permit (`collector/rate_limit/distributed.py`) used if more than one process ever runs; this first test has one process and must not run multi-process accidentally.
+- [ ] **Step 3: Implement** validation and typed policy. YAML examples contain **no guessed numerical online limits**; online values must be copied from Kit evidence + verified licensed policy, with `authorized: false` by default. Single-process budget ledger uses monotonic time and one shared permit per source; any retries/failed attempts count. Shared Redis permit (`collector/rate_limit/distributed.py`) requires separate integration tests before multiple processes; no implicit five-worker experiment.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_policy.py` to PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/policy.py config/benchmark tests/test_buyer_policy.py && git commit -m "feat: gate buyer benchmarks by explicit source policy"`.
 
@@ -112,7 +126,7 @@
 - Produces `collect_inventory_page(transport: BuyerTransport, page_path: str, wanted_skus: set[str], observed_at: datetime) -> list[InventoryObservation]`.
 - Produces `collect_review_page(transport: BuyerTransport, sku: str, page_path: str, observed_at: datetime) -> list[ReviewObservation]`.
 
-- [ ] **Step 1: Write failing tests**: 8 inventory tiles contains only requested 3 SKUs → 3 observations with page provenance; absent desired SKU → no invented zero; valid reviews widget maps 2 records; wrong/missing widget → `empty_suspect`, not empty success; no network is attempted by fixtures.
+- [ ] **Step 1: Write failing tests**: 8 inventory tiles contains only requested 3 SKUs → 3 observations with page provenance; absent desired SKU → no invented zero; valid reviews widget maps 2 records; invalid review scores/missing IDs flagged; schema-version drift produces validation issue rather than success; wrong/missing widget → `empty_suspect`, not empty success; no network is attempted by fixtures.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_adapters.py` and confirm FAIL.
 - [ ] **Step 3: Implement** adapters wrapping Kit `extract_skus_from_page` / `parse_reviews` without calling `BuyerClient.ensure_creds`, `PoolClient`, `cdp_warmup` or legacy retry paths. If importing the legacy parser requires `curl_cffi`, add it to an explicit optional extra rather than depending on undeclared global installs; verify import does not trigger network. Keep the Transport boundary explicit: Fake/OfflineTransport always available, and an allowlisted HTTP Transport only if independently authorized/approved (no impersonation, redirect chasing, challenge handling or identity rotation); a blocked HTTP request ends the run. Do not silently substitute an endpoint from crawler-local if Kit fails.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_adapters.py` to PASS.
@@ -129,12 +143,12 @@
 **Interfaces:**
 - Defines `BenchmarkRun(run_id, kind, source_id, mode, started_at, stopped_at, status, stop_reason, policy_hash)`.
 - Defines `BenchmarkInterval(run_id, window_start, requests, records, ok, empty_valid, empty_suspect, blocked, error, latency_p50_ms, latency_p95_ms, latency_p99_ms, bytes_received)`, unique `(run_id, window_start)`.
-- Defines `BenchmarkSample(run_id, kind, source_id, sku, page_path, observed_at, value, raw_sha256)` with strict sample quota; no raw reviews/author fields in PG.
+- Defines `BenchmarkSample(run_id, kind, source_id, sku, page_path, observed_at, value, raw_sha256)` with strict sample quota; no raw reviews/author fields in PG. `BenchmarkInterval` also stores `valid_count`, `invalid_count`, `unknown_count`, `missing_field_rates`, `schema_version`, `policy_version`, `audit_event_count`.
 - Produces `BenchmarkStore.start_run()`, `upsert_interval()`, `save_sample()`, `finish_run()`.
 
-- [ ] **Step 1: Write failing tests** for two windows, repeated interval write (one row), null stock value preserved, cross-date snapshots kept distinct, failed persistence preventing completed status, no secret fields.
+- [ ] **Step 1: Write failing tests** for two windows, repeated interval write (one row), null stock value preserved, cross-date snapshots kept distinct, interval totals reconcile with terminal events, retention purge works, failed persistence prevents completed status, no secret fields.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_store.py` → FAIL.
-- [ ] **Step 3: Implement** models, migration and store. Write raw response only to approved MinIO location with hash/retention when explicitly permitted; otherwise store only safe digests/metrics. Reuse existing PG instead of new database. No product/Keyword master-upserts during benchmark.
+- [ ] **Step 3: Implement** models, migration and store. Write raw response only to approved MinIO location with hash/retention when explicitly permitted; otherwise store only safe digests/metrics; implement 30/180/7-day-or-shorter retention and size cap. Reuse existing PG instead of new database. No product/Keyword master-upserts during benchmark.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_benchmark_store.py` and `DATABASE_URL=sqlite:////tmp/ozon-buyer-bench-migration.db alembic upgrade head` → PASS / latest revision `f92b0c1d873e`; production PG migration requires separate check.
 - [ ] **Step 5: Commit** `git add collector/storage/models.py alembic/versions/f92b0c1d873e_buyer_benchmark_runs.py collector/benchmark/store.py tests/test_buyer_benchmark_store.py && git commit -m "feat: persist benchmark runs and intervals"`.
 
@@ -148,9 +162,9 @@
 - Produces `BenchmarkMetrics.record(outcome: Outcome, duration_seconds: float, records: int, bytes_received: int) -> None` and `BenchmarkMetrics.serve(port: int) -> None` (local metrics endpoint via `prometheus_client`, only when enabled) with bounded `source/kind/outcome` labels; never use SKU or URL as Prometheus label.
 - Produces `build_benchmark_report(run: BenchmarkRun, intervals: list[BenchmarkInterval]) -> dict` and `render_markdown_report(report: dict) -> str`.
 
-- [ ] **Step 1: Write failing tests** with 15-minute windows verifying request rate, effective rows/h, failure buckets, P50/P95/P99 based on raw durations and duration-weighted capacity, complete vs stopped status; ensure report has no raw user comments or tokens.
+- [ ] **Step 1: Write failing tests** with 15-minute windows verifying request rate, permit waits, peak source concurrency, actual/source cap utilization, valid/invalid/unknown-field counts, request-log-summary reconciliation, effective rows/h, failure buckets, P50/P95/P99 based on raw durations and duration-weighted capacity, complete vs stopped status; ensure report has no raw user comments or tokens.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_report.py` → FAIL.
-- [ ] **Step 3: Implement** monotonic timers / UTC boundaries, bounded cardinality counters/histograms, optional loopback metrics scrape endpoint, interval flush every 900 seconds, minimal JSON + Markdown reports. Report original license/policy version, 12h actual runtime, p95 trend, error rates, source-specific sustainable throughput and **uncertainty**; never claim 5× scaling or “physical stock accuracy”.
+- [ ] **Step 3: Implement** monotonic timers / UTC boundaries, bounded cardinality counters/histograms, optional loopback metrics scrape endpoint, interval flush every 900 seconds, minimal JSON + Markdown reports with per-field validation warnings and event counter reconciliation. Report original license/policy version, 12h actual runtime, p95 trend, error rates, source-specific sustainable throughput and **uncertainty**; never claim 5× scaling or “physical stock accuracy”.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_benchmark_report.py` → PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/metrics.py collector/benchmark/report.py tests/test_buyer_benchmark_report.py && git commit -m "feat: report 15-minute buyer benchmark intervals"`.
 
@@ -165,9 +179,9 @@
 - Produces `async run_experiment(policy: BenchmarkPolicy, adapter, store, metrics, *, clock) -> BenchmarkSummary`; **no live transport is auto-created**.
 - CLI: `python -m collector.benchmark.cli --mode offline --kind inventory --policy config/benchmark/buyer-inventory.example.yaml --fixture samples/benchmark/buyer_inventory_page.json --duration-seconds 60`; permitted live invocation must pass an explicit approved connection config and no default live mode.
 
-- [ ] **Step 1: Write failing tests** for 1-minute fake-clock offline run, fixed 900s interval flush, manual stop/SIGTERM, 12-hour time boundary, no successful completion on write failure, no re-entry when blocked, exact budget enforcement.
+- [ ] **Step 1: Write failing tests** for 1-minute fake-clock offline run, fixed 900s interval flush, manual stop/SIGTERM, 12-hour time boundary, no successful completion on write failure, no re-entry when blocked, exact run/day budget enforcement, 15-minute flush, audit-log failure stopping new requests, and no rate adaptation on errors.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_runner.py` → FAIL.
-- [ ] **Step 3: Implement** single-process bounded async loop; always check policy, source state and monotonic deadline **before** acquiring next request; backpressure when sink is slow. Stop with `completed` only at natural time limit with all metrics flushed; otherwise `stopped/blocked/failed`, with partial report and checkpoint. Use no endless auto retries.
+- [ ] **Step 3: Implement** single-process bounded async loop; always check policy, source state and monotonic deadline **before** acquiring next request; obtain `BudgetLimiter.acquire` before every attempt, persist one terminal event for each attempt; backpressure when sink is slow. Stop with `completed` only at natural time limit with all metrics flushed; otherwise `stopped/blocked/failed`, with partial report and checkpoint. Use no endless auto retries.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_benchmark_runner.py` → PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/runner.py collector/benchmark/cli.py tests/test_buyer_benchmark_runner.py && git commit -m "feat: add bounded 12-hour benchmark runner"`.
 
@@ -185,7 +199,7 @@
 
 - [ ] **Step 1: Write failing end-to-end test** `test_offline_buyer_benchmark_e2e_writes_run_intervals_report`: fixtures → Adapter → Runner → Store → Report; assert `mode=offline`, no network, deterministic summary, no real Cookie/PII.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_e2e.py` → FAIL.
-- [ ] **Step 3: Implement** runbook with (a) Kit/Crawler source matrix and endpoint validation, (b) per-interface permitted budget, (c) offline-first preflight, (d) approved single-run 12h schedule, (e) 15min summary/Prometheus + alert receiver test, (f) pause/abort runbooks, (g) acceptance and retention policy, (h) output for Worker sizing. Document that no live experiment starts absent explicit credentials/authorization/field verification.
+- [ ] **Step 3: Implement** runbook with (a) Kit/Crawler source matrix and endpoint validation, (b) independent inventory/reviews authorized rps/burst/concurrency/min interval/run/day budgets, (c) offline-first preflight, (d) approved single-run 12h schedule, (e) 15min summary/Prometheus + alert receiver test, (f) pause/abort runbooks, (g) acceptance and retention policy, (h) output for Worker sizing, (i) log rotation/retention, (j) request-event-summary reconciliation and field-validity reporting. Document that no live experiment starts absent explicit credentials/authorization/field verification.
 - [ ] **Step 4: Run** `python -m pip install -e '.[test,buyer-benchmark]' && pytest -q tests/test_buyer_*.py && pytest -q` (if the optional extra is needed, else `.[test]`); run offline smoke CLI in short duration; run PG/Redis/MinIO + Alertmanager integration in an approved environment separately, *not* claim success from mocks.
 - [ ] **Step 5: Commit** `git add tests/test_buyer_benchmark_e2e.py docs/benchmark/buyer-12h-runbook.md docs/collector-runtime.md && git commit -m "docs: validate and hand off buyer 12-hour benchmark"`.
 
@@ -194,12 +208,12 @@
 - [ ] 用户/管理员提供并批准**库存源**授权、确切页型/endpoint、来源证据、每分钟和最大并发上限、预计请求总数、合法的账号/凭证使用方式以及数据留存范围。
 - [ ] 同样为**评论源**独立提供上述政策；不共享或继承库存源预算。
 - [ ] 基于 Kit 正确版本的人工审阅通过，确认源矩阵中无未经裁决的关键字段/端点冲突；`ozon-crawler-local` 的任何限速、库存结论不进入批准的在线参数。
-- [ ] 运行时日志脱敏、PG/MinIO 真实写入、告警发送链路、CPU/内存/磁盘空间和人工急停已验证。
+- [ ] 运行时日志脱敏、轮转/留存清理、终态事件与 15 分钟汇总对账、字段验证、PG/MinIO 真实写入、告警发送链路、CPU/内存/磁盘空间和人工急停已验证。
 - [ ] 先跑 Mock / offline / 低频短跑；若实际授权访问被挑战或拒绝，立即停源并标 `blocked`，不求“12h 跑满”。
 - [ ] 12h 结束后核对事件总数、15min interval 总数（正常 48 个完整窗口）、错误分布、抽样响应 hash 与数据库 idempotency；整理吞吐区间，不自动上调速率。
 
 ## Plan Self-Review / Execution Handoff
 
-- **Spec coverage**：源优先级 (T1)、错误/熔断 (T2/3)、两类采集 (T4)、数据与留存 (T5)、监控和报告 (T6)、12h 执行/终止 (T7)、可重复验收 (T8)。
+- **Spec coverage**：字段契约 (T1)、每请求日志及错误分类 (T2)、源级限速/日预算 (T3)、库存和评论字段漂移 (T4)、日志/聚合/留存与对账 (T5)、质量指标 (T6)、12h 严格预算停止 (T7)、可重复验收 (T8)。
 - **Boundary**：不触碰后台 P6/P7/P8，不实现正式分布式 Worker，不假定库存准确，不默认线上请求。
 - **Execution choice**：建议 **Subagent-driven**（每个任务单独复核；源可信度/权限/数据质量失败成本高）。用户审阅本 Plan 后再选执行方式，随后按 Superpowers skill 实施。
