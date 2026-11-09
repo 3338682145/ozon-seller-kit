@@ -255,3 +255,72 @@ class WorkerHeartbeat(Base):
     last_seen_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
     state = Column(String(24), nullable=False, default="idle")
     last_job_id = Column(String(36))
+
+
+# ---------------------------------------------------------------------------
+# Buyer 12-hour benchmark: INDEPENDENT tables. These are NOT product/keyword
+# master tables and must not upsert into products/keywords. They exist only to
+# audit a single-process stability run; review body / author / cookie values
+# never live here.
+# ---------------------------------------------------------------------------
+class BenchmarkRun(Base):
+    """One benchmark execution (offline or live)."""
+    __tablename__ = "benchmark_runs"
+    run_id = Column(String(64), primary_key=True)
+    kind = Column(String(24), nullable=False)          # inventory | reviews
+    source_id = Column(String(64), nullable=False)
+    mode = Column(String(16), nullable=False)         # offline | live
+    started_at = Column(DateTime(timezone=True), nullable=False, default=utc_now)
+    stopped_at = Column(DateTime(timezone=True))
+    status = Column(String(24), nullable=False, default="running")
+    stop_reason = Column(String(256))
+    policy_hash = Column(String(128), nullable=False)
+
+
+class BenchmarkInterval(Base):
+    """One 15-minute aggregated window per run. Unique on (run_id, window_start)
+    so a repeated flush upserts to a single row (idempotent)."""
+    __tablename__ = "benchmark_intervals"
+    id = Column(String(36), primary_key=True, default=uuid_str)
+    run_id = Column(String(64), ForeignKey("benchmark_runs.run_id"), nullable=False)
+    window_start = Column(DateTime(timezone=True), nullable=False)
+    requests = Column(Integer, nullable=False, default=0)
+    records = Column(Integer, nullable=False, default=0)
+    ok = Column(Integer, nullable=False, default=0)
+    empty_valid = Column(Integer, nullable=False, default=0)
+    empty_suspect = Column(Integer, nullable=False, default=0)
+    blocked = Column(Integer, nullable=False, default=0)
+    error = Column(Integer, nullable=False, default=0)
+    latency_p50_ms = Column(Numeric(12, 3))
+    latency_p95_ms = Column(Numeric(12, 3))
+    latency_p99_ms = Column(Numeric(12, 3))
+    bytes_received = Column(Integer, nullable=False, default=0)
+    valid_count = Column(Integer, nullable=False, default=0)
+    invalid_count = Column(Integer, nullable=False, default=0)
+    unknown_count = Column(Integer, nullable=False, default=0)
+    missing_field_rates = Column(JSON, default=dict)
+    schema_version = Column(String(32))
+    policy_version = Column(String(32))
+    audit_event_count = Column(Integer, nullable=False, default=0)
+    __table_args__ = (
+        UniqueConstraint("run_id", "window_start", name="uq_benchmark_interval_window"),
+    )
+
+
+class BenchmarkSample(Base):
+    """Strictly-quota'd, de-identified observations. ``value`` holds ONLY safe
+    summary fields (stock_proxy_max_items / stock_text_remaining / is_capped /
+    score / review_id). Review body, author, cookie and URLs are NEVER stored
+    here; raw responses (when explicitly approved) live in object storage with
+    an expiry and only their sha256 digest is referenced."""
+    __tablename__ = "benchmark_samples"
+    id = Column(String(36), primary_key=True, default=uuid_str)
+    run_id = Column(String(64), ForeignKey("benchmark_runs.run_id"), nullable=False)
+    kind = Column(String(24), nullable=False)
+    source_id = Column(String(64), nullable=False)
+    sku = Column(String(64), nullable=False)
+    page_path = Column(String(512), nullable=False)
+    observed_at = Column(DateTime(timezone=True), nullable=False)
+    value = Column(JSON, nullable=False)
+    raw_sha256 = Column(String(64))  # only when explicitly approved
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)

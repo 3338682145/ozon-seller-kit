@@ -44,5 +44,5 @@ def test_migration_sqlite_bootstrap(tmp_path):
     assert p.returncode == 0, p.stdout + p.stderr
     import sqlite3
     with sqlite3.connect(tmp_path/"migration.db") as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "78a91cdf1b16"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "f92b0c1d873e"
         assert "lease_expires_at" in [x[1] for x in db.execute("PRAGMA table_info(collection_jobs)")]
