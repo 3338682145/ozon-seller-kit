@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ozon-collector-runtime"
+version = "0.1.0"
+description = "Compliance-gated, mock-first collection runtime overlay for ozon-seller-kit"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn[standard]>=0.30,<1", "pydantic>=2,<3",
+  "sqlalchemy>=2.0,<3", "alembic>=1.13,<2", "psycopg[binary]>=3.2,<4",
+  "redis>=5.2,<7", "httpx>=0.27,<1", "minio>=7.2,<8",
+  "clickhouse-connect>=0.8,<1", "polars>=1,<2", "pyarrow>=18,<24",
+  "prometheus-client>=0.21,<1", "opentelemetry-api>=1.25,<2",
+  "opentelemetry-sdk>=1.25,<2", "opentelemetry-instrumentation-fastapi>=0.46b0,<1",
+  "opentelemetry-exporter-otlp>=1.25,<2", "mcp>=1.12,<3"
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "httpx>=0.27,<1", "fakeredis>=2.26,<3"]
+
+[tool.setuptools.packages.find]
+include = ["collector*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["integration: requires real Docker services", "benchmark: mock-only timing baseline"]
