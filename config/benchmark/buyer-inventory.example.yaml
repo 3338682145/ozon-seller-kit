@@ -1,0 +1,28 @@
+# V2 buyer benchmark source policy — INVENTORY (example / offline).
+# Do NOT put guessed online limits here. Online numeric values must be copied
+# from Kit evidence (docs/superpowers/evidence/buyer-source-matrix.md) plus a
+# verified licensed policy. Until then this file is offline-only and
+# `authorized: false`; missing numeric fields fall back to conservative Kit
+# starting values (estimated: 20 concurrency, 30 uses/cookie, 4.6 rps).
+source_id: buyer-inventory
+kind: inventory
+allowed_endpoint: entrypoint-api
+policy_version: v1
+mode: offline
+authorized: false
+
+# Leave numeric limits unset -> conservative defaults apply (marked estimated).
+# Uncomment ONLY after the 12h experiment fixes them:
+# max_rps: 4.6
+# burst: 8
+# max_concurrency: 20
+# max_requests: 100000
+# max_requests_per_day: 1000000
+# cookie_watermark: 1
+# cookie_max_uses: 30
+# duration_seconds: 43200
+
+retention:
+  request_events_days: 30
+  interval_summary_days: 180
+  sample_days: 7

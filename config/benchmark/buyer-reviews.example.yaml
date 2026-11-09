@@ -1,0 +1,25 @@
+# V2 buyer benchmark source policy — REVIEWS (example / offline).
+# Independent from inventory: it does not inherit or share the inventory budget.
+# Online numeric values must come from Kit evidence + a verified licensed policy.
+# Offline-only, authorized: false until then.
+source_id: buyer-reviews
+kind: reviews
+allowed_endpoint: entrypoint-api
+policy_version: v1
+mode: offline
+authorized: false
+
+# Leave numeric limits unset -> conservative defaults apply (estimated).
+# max_rps: 4.6
+# burst: 8
+# max_concurrency: 20
+# max_requests: 100000
+# max_requests_per_day: 1000000
+# cookie_watermark: 1
+# cookie_max_uses: 30
+# duration_seconds: 43200
+
+retention:
+  request_events_days: 30
+  interval_summary_days: 180
+  sample_days: 7
