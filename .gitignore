@@ -1,23 +1,13 @@
-# 绝不入库
-cookie.txt
-cookie.ua
-meta.json
-*.jar
-.env
-**/__pycache__/
-*.pyc
-.DS_Store
-# 大文件
-data/*.json
-
-# Collector runtime overlay
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+.env
 *.db
 *.sqlite
 *.log
 .venv/
 backups/
 dist/
+
+.env.metabase
