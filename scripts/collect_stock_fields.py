@@ -64,7 +64,9 @@ def collect_tiles(path, creds, proxy):
             continue
         rows.append({
             "sku": str(sku),
-            "stock_max": it.get("stock_max"),
+            # 真实库存优先取 textDS 文案（无 2000 封顶），缺失时回退 maxItems
+            "stock_max": it.get("stock_real") if it.get("stock_real") is not None else it.get("stock_max"),
+            "stock_limit": it.get("stock_limit"),
             "position": idx + 1,
             "title": it.get("title"),
         })

@@ -277,6 +277,7 @@ def extract_skus_from_page(page_json):
 
                     cell_ti = it.get("cellTrackingInfo") or {}
                     title = cell_ti.get("title")
+                    stock_real = None
                     price = parse_num(cell_ti.get("price"))
                     original_price = None
                     discount_pct = None
@@ -293,11 +294,17 @@ def extract_skus_from_page(page_json):
                             if len(pr_list) > 1:
                                 original_price = parse_num(pr_list[1].get("text"))
                             discount_pct = parse_num((st.get("priceV2") or {}).get("discount"))
-                        elif st_type == "textDS" and not title:
+                        elif st_type == "textDS":
                             ds = st.get("textDS") or {}
+                            txt = (ds.get("text") or "").strip()
                             aid = st.get("id") or ((ds.get("testInfo") or {}).get("automatizationId") or "")
-                            if aid == "name":
-                                title = (ds.get("text") or "").strip()
+                            if aid == "name" and not title:
+                                title = txt
+                            # 真库存文案：如「3 359 ед осталось」，无 2000 封顶，优先于 maxItems
+                            if stock_real is None and "осталось" in txt:
+                                m_rest = re.search(r"(\d[\d\s\u00a0]*?)\s*ед", txt)
+                                if m_rest:
+                                    stock_real = int(re.sub(r"[^\d]", "", m_rest.group(1)))
                         elif st_type == "labelListV2" and (rating is None or reviews_count is None):
                             texts = [x.get("text", {}).get("text") for x in ((st.get("labelListV2") or {}).get("items") or []) if x.get("text")]
                             texts = [x for x in texts if x]
@@ -339,6 +346,8 @@ def extract_skus_from_page(page_json):
                         "rating": rating,
                         "reviews_count": reviews_count,
                         "stock_max": stock_max,
+                        "stock_real": stock_real if stock_real is not None else stock_max,
+                        "stock_limit": stock_max,
                         "is_advert": is_advert,
                     })
             except Exception:
