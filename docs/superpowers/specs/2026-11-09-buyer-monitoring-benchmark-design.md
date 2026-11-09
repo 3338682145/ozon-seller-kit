@@ -69,3 +69,16 @@
 - 在既有仓库工作，V1 基线存于 `archive/pre-v2-2026-11-09`，V2 文档保存在独立 `design/v2-buyer-benchmark` 分支；未经审查不修改主分支或删除旧代码。
 - 原仓库为公开仓库，现有 `data/toys-slim.db` 已被 Git 跟踪；归档或 `.gitignore` 不会撤回历史公开数据。其数据权利与是否需要私有化/历史清理须单独审批。
 - 本设计经用户审核后，再依 `superpowers:writing-plans` 在 `docs/superpowers/plans/2026-11-09-buyer-monitoring-benchmark.md` 编写逐任务实施计划；**在批准前不写生产代码、不启动 12h 采集**。
+
+## 9. 补充参考仓库与证据优先级（2026-11-09 用户确认）
+
+用户提供 `3338682145/ozon-crawler-local` 作为采集接口与数据契约的**补充参考**，但明确指出其前台库存、限速数值不准确，部分请求端点可能有误。V2 不应使用该仓库的速率值、库存含义或请求 URL 作为线上默认配置；只可借鉴经过审阅的失败状态分类、结构化日志、字段证据记录和时序不覆盖原则。
+
+**冲突裁决：**
+1. 前台库存观测路径与请求实现：优先复核 `ozon-seller-kit/ozon_buyer/collector.py`、`ozon_buyer/http.py`、`ozon_buyer/detail.py`、`docs/BUYER-COLLECTION-METHODS.md` 中与目标页型匹配的路径，再用获准、脱敏原始响应 golden fixture 做一致性测试。Kit 内部实现互相冲突时也**不能臆断**。
+2. 库存业务语义：以 Kit 较新的 `docs/field-dictionary.md` 为准；`stock_max` 只是最大可购量代理，不是核实过的物理库存；不根据差值产生“真实销量”。
+3. 限速：以 Kit 对应端点的实际证据为**待核实的起始参考**，不采用 `ozon-crawler-local` 的参数；正式在线负载上限仍需要操作者输入已授权的每接口限额并验收，禁止把旧脚本并发常数当作许可上限。
+4. 请求路径：实际请求以 Kit 的已验证页型与获准的独立测试样本为准；仅在受控离线合同测试通过后允许对应新 Transport；`ozon-crawler-local` 文档中的不同端点先列“待裁决”，不自动 fallback 到其他路径。
+5. 故障语义：参考 `ozon-crawler-local` 的 ok/eof/soft_limit/blocked 分类，但不得照搬其 403 冷却重试、Cookie 获取/轮换、TLS 模拟或更换代理行为；遇访问限制停源，记录脱敏证据供人工审批。
+
+**设计验收新增：** 发布前必须有 `docs/superpowers/evidence/buyer-source-matrix.md`，逐个列出库存、评论的 Kit 源文件/函数、请求页型、字段路径、限速证据、冲突项、已批准参数及测试样本 hash。没有真实数据/授权时只能展示“未验证”，不得声称达到了 12h 在线吞吐。
