@@ -105,6 +105,7 @@
 **Files:**
 - Create: `collector/benchmark/adapters.py`
 - Create: `tests/test_buyer_adapters.py`
+- Modify: `pyproject.toml` (add optional `buyer-benchmark` extra if existing Kit pure parsers require import-time `curl_cffi`)
 
 **Interfaces:**
 - Consumes `BuyerTransport.fetch_page(page_path: str) -> ResponseEnvelope` (injected implementation; test fake only by default), plus Kit pure parsers.
@@ -113,9 +114,9 @@
 
 - [ ] **Step 1: Write failing tests**: 8 inventory tiles contains only requested 3 SKUs → 3 observations with page provenance; absent desired SKU → no invented zero; valid reviews widget maps 2 records; wrong/missing widget → `empty_suspect`, not empty success; no network is attempted by fixtures.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_adapters.py` and confirm FAIL.
-- [ ] **Step 3: Implement** adapters wrapping Kit `extract_skus_from_page` / `parse_reviews` without calling `BuyerClient.ensure_creds`, `PoolClient`, `cdp_warmup` or legacy retry paths. Keep the Transport boundary explicit; a live implementation is allowed **only if** approved source matrix + authorization policy and no anti-access-control bypass. Do not silently substitute endpoint from crawler-local if Kit fails.
+- [ ] **Step 3: Implement** adapters wrapping Kit `extract_skus_from_page` / `parse_reviews` without calling `BuyerClient.ensure_creds`, `PoolClient`, `cdp_warmup` or legacy retry paths. If importing the legacy parser requires `curl_cffi`, add it to an explicit optional extra rather than depending on undeclared global installs; verify import does not trigger network. Keep the Transport boundary explicit: Fake/OfflineTransport always available, and an allowlisted HTTP Transport only if independently authorized/approved (no impersonation, redirect chasing, challenge handling or identity rotation); a blocked HTTP request ends the run. Do not silently substitute an endpoint from crawler-local if Kit fails.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_adapters.py` to PASS.
-- [ ] **Step 5: Commit** `git add collector/benchmark/adapters.py tests/test_buyer_adapters.py && git commit -m "feat: isolate buyer inventory and review sample adapters"`.
+- [ ] **Step 5: Commit** `git add collector/benchmark/adapters.py tests/test_buyer_adapters.py pyproject.toml && git commit -m "feat: isolate buyer inventory and review sample adapters"`.
 
 ### Task 5: Persist experiment runs, intervals and limited samples
 
@@ -144,12 +145,12 @@
 - Create: `tests/test_buyer_benchmark_report.py`
 
 **Interfaces:**
-- Produces `BenchmarkMetrics.record(outcome: Outcome, duration_seconds: float, records: int, bytes_received: int) -> None` with bounded `source/kind/outcome` labels; never use SKU or URL as Prometheus label.
+- Produces `BenchmarkMetrics.record(outcome: Outcome, duration_seconds: float, records: int, bytes_received: int) -> None` and `BenchmarkMetrics.serve(port: int) -> None` (local metrics endpoint via `prometheus_client`, only when enabled) with bounded `source/kind/outcome` labels; never use SKU or URL as Prometheus label.
 - Produces `build_benchmark_report(run: BenchmarkRun, intervals: list[BenchmarkInterval]) -> dict` and `render_markdown_report(report: dict) -> str`.
 
 - [ ] **Step 1: Write failing tests** with 15-minute windows verifying request rate, effective rows/h, failure buckets, P50/P95/P99 based on raw durations and duration-weighted capacity, complete vs stopped status; ensure report has no raw user comments or tokens.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_report.py` → FAIL.
-- [ ] **Step 3: Implement** monotonic timers / UTC boundaries, bounded cardinality counters/histograms, interval flush every 900 seconds, minimal JSON + Markdown reports. Report original license/policy version, 12h actual runtime, p95 trend, error rates, source-specific sustainable throughput and **uncertainty**; never claim 5× scaling or “physical stock accuracy”.
+- [ ] **Step 3: Implement** monotonic timers / UTC boundaries, bounded cardinality counters/histograms, optional loopback metrics scrape endpoint, interval flush every 900 seconds, minimal JSON + Markdown reports. Report original license/policy version, 12h actual runtime, p95 trend, error rates, source-specific sustainable throughput and **uncertainty**; never claim 5× scaling or “physical stock accuracy”.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_benchmark_report.py` → PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/metrics.py collector/benchmark/report.py tests/test_buyer_benchmark_report.py && git commit -m "feat: report 15-minute buyer benchmark intervals"`.
 
@@ -185,7 +186,7 @@
 - [ ] **Step 1: Write failing end-to-end test** `test_offline_buyer_benchmark_e2e_writes_run_intervals_report`: fixtures → Adapter → Runner → Store → Report; assert `mode=offline`, no network, deterministic summary, no real Cookie/PII.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_benchmark_e2e.py` → FAIL.
 - [ ] **Step 3: Implement** runbook with (a) Kit/Crawler source matrix and endpoint validation, (b) per-interface permitted budget, (c) offline-first preflight, (d) approved single-run 12h schedule, (e) 15min summary/Prometheus + alert receiver test, (f) pause/abort runbooks, (g) acceptance and retention policy, (h) output for Worker sizing. Document that no live experiment starts absent explicit credentials/authorization/field verification.
-- [ ] **Step 4: Run** `pytest -q tests/test_buyer_*.py && pytest -q`; run offline smoke CLI in short duration; run PG/Redis/MinIO + Alertmanager integration in an approved environment separately, *not* claim success from mocks.
+- [ ] **Step 4: Run** `python -m pip install -e '.[test,buyer-benchmark]' && pytest -q tests/test_buyer_*.py && pytest -q` (if the optional extra is needed, else `.[test]`); run offline smoke CLI in short duration; run PG/Redis/MinIO + Alertmanager integration in an approved environment separately, *not* claim success from mocks.
 - [ ] **Step 5: Commit** `git add tests/test_buyer_benchmark_e2e.py docs/benchmark/buyer-12h-runbook.md docs/collector-runtime.md && git commit -m "docs: validate and hand off buyer 12-hour benchmark"`.
 
 ## Preflight Gate for Actual 12h Online Run
