@@ -28,6 +28,11 @@ try:
 except (ImportError, ValueError):
     from env import get_chrome_executable, detect_proxy
 
+try:
+    from .tile_parse import is_tile_widget_key, parse_advert_flag, parse_stock_max
+except (ImportError, ValueError):
+    from tile_parse import is_tile_widget_key, parse_advert_flag, parse_stock_max
+
 CACHE = os.path.expanduser("~/.cache/ozon-search")
 PROXY = detect_proxy()
 
@@ -176,16 +181,29 @@ def count_num(s):
 
 
 def parse_items(text):
+    """取第一个含商品卡片的 widget 的 items。
+
+    旧实现只认 `tileGridDesktop`，而 collector 认 searchResultsV2/tileGrid/tile 三种；
+    同一份响应可能出现「collector 有数据、http 返回空」。这里统一用
+    `tile_parse.is_tile_widget_key`，并在单个 widget 解析失败时继续尝试下一个，
+    不再直接把整页判空。
+    """
     try:
         ws = json.loads(text).get("widgetStates") or {}
     except Exception:
         return []
     for k, v in ws.items():
-        if k.startswith("tileGridDesktop"):
-            try:
-                return json.loads(v).get("items") or []
-            except Exception:
-                return []
+        if not is_tile_widget_key(k):
+            continue
+        try:
+            data = json.loads(v) if isinstance(v, str) else v
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        items = data.get("items") or []
+        if items:
+            return items
     return []
 
 
@@ -222,20 +240,9 @@ def parse_tile(it, page_no):
                 o["rating"] = num(texts[0])
                 if len(texts) > 1:
                     o["reviews"] = count_num(texts[1])
-    tgi = it.get("trackingInfo") or {}
-    o["is_advert"] = bool(((tgi.get("click") or {}).get("custom") or {}).get("advertLite"))
-    # 库存：实测路径 multiButton.ozonButton.addToCart.quantityButton.maxItems
-    # （兼容变体：ozonButton.quantityButton / multiButton.quantityButton / mainState）
-    mb = it.get("multiButton") or {}
-    ob = mb.get("ozonButton") or {}
-    qb = ((ob.get("addToCart") or {}).get("quantityButton")
-          or ob.get("quantityButton") or mb.get("quantityButton") or {})
-    o["stock_max"] = qb.get("maxItems")
-    if o["stock_max"] is None:
-        for st in it.get("mainState") or []:
-            if st.get("type") == "quantityButton":
-                o["stock_max"] = (st.get("quantityButton") or {}).get("maxItems")
-                break
+    # 广告标记与库存上限统一走 tile_parse：is_advert 三态（None=未知），stock_max 规范为 int
+    o["is_advert"] = parse_advert_flag(it)
+    o["stock_max"] = parse_stock_max(it)
     return o
 
 

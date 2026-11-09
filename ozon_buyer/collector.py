@@ -34,6 +34,11 @@ try:
 except (ImportError, ValueError):
     from env import get_chrome_executable, detect_proxy, parse_num, parse_count_num
 
+try:
+    from .tile_parse import is_tile_widget_key, parse_advert_flag, parse_stock_max
+except (ImportError, ValueError):
+    from tile_parse import is_tile_widget_key, parse_advert_flag, parse_stock_max
+
 CACHE_DIR = os.path.expanduser("~/.cache/ozon-search")
 COOKIE_TTL = 3600 * 6  # 6小时
 
@@ -227,15 +232,19 @@ def request_entrypoint_page(url, creds, proxy=None):
     raise RuntimeError(f"Entrypoint API 请求失败，状态码: {resp.status_code}")
 
 
-def extract_skus_from_page(page_json):
-    """从 entrypoint-api 的响应中抽取商品卡片信息（含最新 stock_max 批量库存通道）"""
+def extract_skus_from_page(page_json, errors=None):
+    """从 entrypoint-api 的响应中抽取商品卡片信息（含最新 stock_max 批量库存通道）。
+
+    errors：可选的 list。传入时把单个 widget 的解析失败记录进去，调用方据此区分
+    「解析失败」与「页面确实没有商品」；不传则保持旧的静默行为（向后兼容）。
+    """
     if isinstance(page_json, dict) and "body" in page_json:
         b = page_json["body"]
         page_json = json.loads(b) if isinstance(b, str) else b
     ws = page_json.get("widgetStates", {})
     skus = []
     for k, v in ws.items():
-        if "searchResultsV2" in k or "tileGrid" in k or "tile" in k:
+        if is_tile_widget_key(k):
             try:
                 tile_data = json.loads(v) if isinstance(v, str) else v
                 items = tile_data.get("items", [])
@@ -281,21 +290,10 @@ def extract_skus_from_page(page_json):
                             if len(texts) > 1 and reviews_count is None:
                                 reviews_count = parse_count_num(texts[1])
 
-                    # 最新库存通道：multiButton.ozonButton.addToCart.quantityButton.maxItems
-                    # （100% 覆盖，翻页即得全类目可用库存，2000 为平台上限）
-                    mb = it.get("multiButton") or {}
-                    ob = mb.get("ozonButton") or {}
-                    qb = ((ob.get("addToCart") or {}).get("quantityButton")
-                          or ob.get("quantityButton") or mb.get("quantityButton") or {})
-                    stock_max = qb.get("maxItems")
-                    if stock_max is None:
-                        for st in it.get("mainState") or []:
-                            if st.get("type") == "quantityButton":
-                                stock_max = (st.get("quantityButton") or {}).get("maxItems")
-                                break
-
-                    tgi = it.get("trackingInfo") or {}
-                    is_advert = bool(((tgi.get("click") or {}).get("custom") or {}).get("advertLite"))
+                    # 库存上限与广告标记统一走 tile_parse，保证 collector / http 语义一致：
+                    # stock_max 规范为 int 或 None；is_advert 三态（None = 未知，不得当作自然位）
+                    stock_max = parse_stock_max(it)
+                    is_advert = parse_advert_flag(it)
 
                     skus.append({
                         "sku_id": str(sku_id) if sku_id else None,
@@ -309,8 +307,10 @@ def extract_skus_from_page(page_json):
                         "stock_max": stock_max,
                         "is_advert": is_advert,
                     })
-            except Exception:
-                pass
+            except Exception as exc:
+                if errors is not None:
+                    errors.append({"widget": k, "error": f"{type(exc).__name__}: {exc}"})
+                continue
     return skus
 
 
