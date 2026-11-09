@@ -19,6 +19,9 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "httpx>=0.27,<1", "fakeredis>=2.26,<3", "pyyaml>=6,<7"]
+# V2 buyer benchmark: Kit pure parsers import curl_cffi at module load; the live
+# HTTP transport also needs it. Offline tests do not.
+buyer-benchmark = ["curl_cffi>=0.7,<1"]
 
 [tool.setuptools.packages.find]
 include = ["collector*"]
