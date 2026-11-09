@@ -1,0 +1,7 @@
+{
+  "_provenance": "CONSTRUCTED from Kit ozon_buyer/detail.py parse_reviews widget shape. NOT live-fetched this session (antibot block).",
+  "widgetStates": {
+    "webListReviews-11-2-default-1": "{\"paging\": {\"total\": 128, \"perPage\": 30, \"page\": 1}, \"reviews\": [{\"uuid\": \"rev-0001\", \"content\": {\"score\": 5, \"comment\": \"Отличный товар\", \"positive\": \"Быстрая доставка\", \"negative\": \"\", \"photos\": []}, \"author\": {\"firstName\": \"Иван\", \"lastName\": \"П.\"}, \"publishedAt\": 1762600000, \"usefulness\": {\"useful\": 12}}, {\"uuid\": \"rev-0002\", \"content\": {\"score\": 4, \"comment\": \"Хорошо, но упаковка помялась\", \"positive\": null, \"negative\": \"Мятая коробка\", \"photos\": []}, \"author\": {\"firstName\": \"Анна\", \"lastName\": \"К.\"}, \"publishedAt\": 1762500000, \"usefulness\": {\"useful\": 3}}, {\"uuid\": \"rev-0003\", \"content\": {\"score\": 9, \"comment\": \"\", \"positive\": null, \"negative\": null, \"photos\": []}, \"author\": {\"firstName\": \"Петр\", \"lastName\": \"О.\"}, \"publishedAt\": 1762400000, \"usefulness\": {\"useful\": 0}}]}",
+    "webReviewProductScore-11-1-default-1": "{\"totalScore\": 4.7, \"reviewsCount\": 128}"
+  }
+}
