@@ -1,0 +1,9 @@
+-- Template only. NEVER run without evidence for source license, credentials and rate cap.
+-- BEGIN;
+-- UPDATE data_sources SET authorization_scope='seller:authorized:<seller_id>',
+--   license_verified=true, enabled=true, credential_ref='seller/<ref>' WHERE source_id='seller_p6';
+-- INSERT INTO collection_policies (id,source_id,endpoint,authorization_scope,max_concurrency,
+--   rate_limit,burst_limit,refresh_interval,timeout_seconds,retry_budget,priority,enabled,limit_verified)
+-- VALUES (gen_random_uuid()::text,'seller_p6','/api/site/seller-analytics/what_to_sell/data/v3',
+--   'seller:authorized:<seller_id>',1,0.05,1,86400,20,1,0,true,true);
+-- COMMIT;

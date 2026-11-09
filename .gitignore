@@ -9,3 +9,15 @@ meta.json
 .DS_Store
 # 大文件
 data/*.json
+
+# Collector runtime overlay
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+*.db
+*.sqlite
+*.log
+.venv/
+backups/
+dist/

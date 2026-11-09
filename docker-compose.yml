@@ -1,0 +1,191 @@
+name: ozon-collector
+x-app: &app
+  build: .
+  env_file: .env
+  environment: &app-env
+    DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    REDIS_URL: redis://redis:6379/0
+    MINIO_ENDPOINT: minio:9000
+    MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+    MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    CLICKHOUSE_HOST: clickhouse
+    CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+    CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+    API_KEY: ${API_KEY}
+    VIEWER_KEY: ${VIEWER_KEY}
+    ADMIN_KEY: ${ADMIN_KEY}
+    ALLOW_INSECURE_DEV: "false"
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    SAMPLE_PATH: samples/mock_collection.json
+    DATASET_VERSION: ${DATASET_VERSION:-mock-v1}
+    MAX_QUEUE_BACKLOG: ${MAX_QUEUE_BACKLOG:-10000}
+  networks: [internal]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      retries: 15
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 15
+    networks: [internal]
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhousedata:/var/lib/clickhouse
+      - ./sql/clickhouse/001_facts.sql:/docker-entrypoint-initdb.d/001_facts.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user $$CLICKHOUSE_USER --password $$CLICKHOUSE_PASSWORD -q 'SELECT 1'"]
+      interval: 10s
+      retries: 20
+    networks: [internal]
+
+  minio:
+    image: minio/minio:RELEASE.2025-02-07T23-21-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes: [miniodata:/data]
+    networks: [internal]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-02-08T19-14-21Z
+    depends_on:
+      minio: {condition: service_started}
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+    entrypoint: ["/bin/sh", "-ec"]
+    command: >-
+      until mc alias set local http://minio:9000 "$${MINIO_ACCESS_KEY}" "$${MINIO_SECRET_KEY}"; do sleep 2; done;
+      mc mb --ignore-existing local/raw-snapshots;
+      mc mb --ignore-existing local/failed-records;
+      mc mb --ignore-existing local/exports;
+      mc mb --ignore-existing local/archives;
+    networks: [internal]
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["sh", "-c", "alembic upgrade head && uvicorn collector.api:create_app --factory --host 0.0.0.0 --port 8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      clickhouse: {condition: service_healthy}
+      minio-init: {condition: service_completed_successfully}
+    ports: ["127.0.0.1:8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=3)"]
+      interval: 10s
+      retries: 10
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "collector.workers.worker_cli"]
+    depends_on:
+      api: {condition: service_healthy}
+    deploy: {replicas: 2}
+
+  scheduler:
+    <<: *app
+    command: ["python", "-m", "collector.scheduler.run"]
+    depends_on:
+      api: {condition: service_healthy}
+
+  mcp-server:
+    <<: *app
+    command: ["python", "-m", "collector.agents.mcp_server"]
+    depends_on:
+      api: {condition: service_healthy}
+    # Internal network only. DSH connects via separately approved gateway.
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus"]
+    volumes:
+      - ./observability/prometheus:/etc/prometheus:ro
+      - prometheusdata:/prometheus
+    networks: [internal]
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes: ["./observability/loki/config.yml:/etc/loki/config.yml:ro", "lokidata:/loki"]
+    networks: [internal]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.113.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes: ["./observability/otel/config.yaml:/etc/otelcol/config.yaml:ro"]
+    networks: [internal]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes: ["./observability/alertmanager/config.yml:/etc/alertmanager/alertmanager.yml:ro"]
+    networks: [internal]
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${ADMIN_KEY}
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["127.0.0.1:3000:3000"]
+    networks: [internal]
+
+  # Crawlab manages only batches; each Crawlab task calls API POST /jobs.
+  # It does not run Redis subtask workers. Docker profile not required for mock E2E.
+  crawlab:
+    image: crawlabteam/crawlab:latest
+    profiles: ["crawlab"]
+    environment:
+      CRAWLAB_NODE_MASTER: "Y"
+      CRAWLAB_MONGO_HOST: crawlab-mongo
+    ports: ["127.0.0.1:8080:8080"]
+    depends_on: [crawlab-mongo]
+    volumes: [crawlabdata:/root/.crawlab]
+    networks: [internal]
+
+  crawlab-mongo:
+    image: mongo:6
+    profiles: ["crawlab"]
+    volumes: [mongodbdata:/data/db]
+    networks: [internal]
+
+networks:
+  internal: {}
+volumes:
+  pgdata: {}
+  redisdata: {}
+  clickhousedata: {}
+  miniodata: {}
+  prometheusdata: {}
+  lokidata: {}
+  grafanadata: {}
+  crawlabdata: {}
+  mongodbdata: {}

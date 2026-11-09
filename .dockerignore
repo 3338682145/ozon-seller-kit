@@ -1,0 +1,10 @@
+.git
+.env
+*.db
+*.sqlite
+*.pyc
+__pycache__
+.pytest_cache
+.venv
+local-*
+data/toys-slim.db
