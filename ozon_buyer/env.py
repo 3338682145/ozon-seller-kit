@@ -31,6 +31,10 @@ CHROME_CANDIDATES = [
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
+    "/usr/local/bin/chromium",
+    "/usr/local/bin/chromium-browser",
+    "/usr/local/bin/google-chrome",
+    "/opt/google/chrome/chrome",
 ]
 
 DEFAULT_UA = (
@@ -47,20 +51,20 @@ def get_chrome_executable():
 
 
 def detect_proxy():
-    # 环境变量优先
+    # 本地代理端口优先（Chromium 不支持内联账号密码的环境代理 URL）
+    for port in [7890, 7897, 8118, 10808, 10809]:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                return f"http://127.0.0.1:{port}"
+        except Exception:
+            pass
+    # 环境变量兜底（curl_cffi 支持带认证的代理）
     for var in ["https_proxy", "http_proxy", "ALL_PROXY", "HTTPS_PROXY", "HTTP_PROXY"]:
         val = os.environ.get(var)
         if val:
             if not val.startswith("http"):
                 val = "http://" + val
             return val
-    # 探测本地端口
-    for port in [7897, 7890, 10808, 10809]:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
-                return f"http://127.0.0.1:{port}"
-        except Exception:
-            pass
     return None
 
 

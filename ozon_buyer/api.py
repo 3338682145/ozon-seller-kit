@@ -116,7 +116,7 @@ class BuyerClient:
 
         # 第一屏
         api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(f'/product/{sku_str}/')}"
-        resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
+        resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=15)
         if resp.status_code != 200:
             return {"sku": sku_str, "error": f"HTTP {resp.status_code}"}
 
@@ -130,7 +130,7 @@ class BuyerClient:
             pdp2_path = f"/product/{sku_str}/?layout_container=pdpPage2column&layout_page_index=2"
             api2_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(pdp2_path)}"
             try:
-                resp2 = cr.get(api2_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
+                resp2 = cr.get(api2_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=15)
                 if resp2.status_code == 200:
                     ws2 = resp2.json().get("widgetStates", {})
                     result.update(parse_pdp2(ws2))
@@ -173,7 +173,7 @@ class BuyerClient:
         api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
 
         try:
-            resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
+            resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=15)
             if resp.status_code != 200:
                 return {"sku": sku_str, "count": 0, "sellers": [], "error": f"HTTP {resp.status_code}"}
             ws = resp.json().get("widgetStates", {})

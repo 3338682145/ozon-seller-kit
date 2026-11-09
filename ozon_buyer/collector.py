@@ -59,7 +59,7 @@ def save_cookie_cache(d, cache_key="ozon_session"):
     return fpath
 
 
-def cdp_warmup(target_url="https://www.ozon.ru/", proxy=None, timeout=60, is_adult=False):
+def cdp_warmup(target_url="https://www.ozon.ru/", proxy=None, timeout=60, is_adult=False, no_proxy=False, headless=False):
     """跨平台安全静默预热：启动 Chrome/Edge 通过 CDP 过 antibot 并获取 Cookie"""
     try:
         import websocket
@@ -71,7 +71,9 @@ def cdp_warmup(target_url="https://www.ozon.ru/", proxy=None, timeout=60, is_adu
     if not chrome_bin:
         raise RuntimeError("未在当前系统找到 Chrome 或 Edge 可执行文件！")
 
-    if not proxy:
+    if no_proxy:
+        proxy = None
+    elif not proxy:
         proxy = detect_proxy()
 
     port = 9888
@@ -87,8 +89,12 @@ def cdp_warmup(target_url="https://www.ozon.ru/", proxy=None, timeout=60, is_adu
         "--disable-blink-features=AutomationControlled",
         "about:blank",
     ]
+    if headless:
+        args.insert(1, "--headless=new")
     if proxy:
         args.append(f"--proxy-server={proxy}")
+    elif no_proxy:
+        args.append("--no-proxy-server")  # 环境里有 HTTP_PROXY 时会污染直连
 
     p = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     ws = None
@@ -132,8 +138,27 @@ def cdp_warmup(target_url="https://www.ozon.ru/", proxy=None, timeout=60, is_adu
         call("Page.enable")
         call("Runtime.enable")
         call("Network.enable")
+        if headless:
+            # 无头模式必须把 UA / platform / Client Hints 三者一起对齐，
+            # 只改 UA 会留下 sec-ch-ua-platform=Linux 与 HeadlessChrome 两处破绽。
+            call("Network.setUserAgentOverride", {
+                "userAgent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                              "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"),
+                "acceptLanguage": "ru-RU,ru",
+                "platform": "Win32",
+                "userAgentMetadata": {
+                    "brands": [{"brand": "Not-A.Brand", "version": "24"},
+                               {"brand": "Chromium", "version": "146"}],
+                    "fullVersion": "146.0.0.0",
+                    "platform": "Windows",
+                    "platformVersion": "15.0.0",
+                    "architecture": "x86",
+                    "model": "",
+                    "mobile": False,
+                },
+            })
 
-        print(f"[*] 导航至 Ozon: {target_url} (代理: {proxy})")
+        print(f"[*] 导航至 Ozon: {target_url} (代理: {proxy}, headless={headless})")
         call("Page.navigate", {"url": target_url})
 
         # 循环等待 challenge 通过
@@ -213,12 +238,12 @@ def request_entrypoint_page(url, creds, proxy=None):
         "Referer": "https://www.ozon.ru/",
     }
 
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = {"http": proxy, "https": proxy} if proxy else {}  # 空 dict = 真直连，不读环境变量
 
     resp = cr.get(
         api_url,
         headers=headers,
-        impersonate="chrome124",
+        impersonate="chrome146",
         proxies=proxies,
         timeout=15,
     )
@@ -235,7 +260,7 @@ def extract_skus_from_page(page_json):
     ws = page_json.get("widgetStates", {})
     skus = []
     for k, v in ws.items():
-        if "searchResultsV2" in k or "tileGrid" in k or "tile" in k:
+        if "searchResultsV2" in k or "tileGrid" in k or "tile" in k or "skuGrid" in k:
             try:
                 tile_data = json.loads(v) if isinstance(v, str) else v
                 items = tile_data.get("items", [])
@@ -252,6 +277,7 @@ def extract_skus_from_page(page_json):
 
                     cell_ti = it.get("cellTrackingInfo") or {}
                     title = cell_ti.get("title")
+                    stock_real = None
                     price = parse_num(cell_ti.get("price"))
                     original_price = None
                     discount_pct = None
@@ -268,11 +294,17 @@ def extract_skus_from_page(page_json):
                             if len(pr_list) > 1:
                                 original_price = parse_num(pr_list[1].get("text"))
                             discount_pct = parse_num((st.get("priceV2") or {}).get("discount"))
-                        elif st_type == "textDS" and not title:
+                        elif st_type == "textDS":
                             ds = st.get("textDS") or {}
+                            txt = (ds.get("text") or "").strip()
                             aid = st.get("id") or ((ds.get("testInfo") or {}).get("automatizationId") or "")
-                            if aid == "name":
-                                title = (ds.get("text") or "").strip()
+                            if aid == "name" and not title:
+                                title = txt
+                            # 真库存文案：如「3 359 ед осталось」，无 2000 封顶，优先于 maxItems
+                            if stock_real is None and "осталось" in txt:
+                                m_rest = re.search(r"(\d[\d\s\u00a0]*?)\s*ед", txt)
+                                if m_rest:
+                                    stock_real = int(re.sub(r"[^\d]", "", m_rest.group(1)))
                         elif st_type == "labelListV2" and (rating is None or reviews_count is None):
                             texts = [x.get("text", {}).get("text") for x in ((st.get("labelListV2") or {}).get("items") or []) if x.get("text")]
                             texts = [x for x in texts if x]
@@ -288,6 +320,13 @@ def extract_skus_from_page(page_json):
                     qb = ((ob.get("addToCart") or {}).get("quantityButton")
                           or ob.get("quantityButton") or mb.get("quantityButton") or {})
                     stock_max = qb.get("maxItems")
+                    if stock_max is None:
+                        # skuGrid 形态：multiButton.button.addToCartButtonWithQuantity.maxItems
+                        bwq = ((mb.get("button") or {}).get("addToCartButtonWithQuantity") or {})
+                        stock_max = bwq.get("maxItems")
+                    if stock_max is None:
+                        bwq2 = (it.get("button") or {}).get("addToCartButtonWithQuantity") or {}
+                        stock_max = bwq2.get("maxItems")
                     if stock_max is None:
                         for st in it.get("mainState") or []:
                             if st.get("type") == "quantityButton":
@@ -307,6 +346,8 @@ def extract_skus_from_page(page_json):
                         "rating": rating,
                         "reviews_count": reviews_count,
                         "stock_max": stock_max,
+                        "stock_real": stock_real if stock_real is not None else stock_max,
+                        "stock_limit": stock_max,
                         "is_advert": is_advert,
                     })
             except Exception:
@@ -325,9 +366,10 @@ def fetch_sku_seller_info(sku_link, creds, proxy=None):
         "Accept": "application/json",
         "Referer": "https://www.ozon.ru/",
     }
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = {"http": proxy, "https": proxy} if proxy else {}  # 空 dict = 真直连，不读环境变量
 
     out = {
+        "title": None,
         "seller_name": None,
         "seller_id": None,
         "orders_str": None,
@@ -342,7 +384,7 @@ def fetch_sku_seller_info(sku_link, creds, proxy=None):
     }
 
     try:
-        resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=12)
+        resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=12)
         if resp.status_code != 200:
             return None
         data = resp.json()
@@ -378,6 +420,9 @@ def fetch_sku_seller_info(sku_link, creds, proxy=None):
                 out["price"] = parse_num(pr.get("price"))
                 out["original_price"] = parse_num(pr.get("originalPrice"))
                 out["is_available"] = pr.get("isAvailable")
+            elif "webProductHeading" in k:
+                hd = json.loads(v) if isinstance(v, str) else v
+                out["title"] = hd.get("title")
 
         return out if (out["seller_name"] or out["seller_id"]) else None
     except Exception:
@@ -402,14 +447,14 @@ def fetch_sku_reviews(sku_id, creds, proxy=None, pages=1, sort="usefulness_desc"
         "Accept": "application/json",
         "Referer": f"https://www.ozon.ru/product/{sku_id}/",
     }
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = {"http": proxy, "https": proxy} if proxy else {}  # 空 dict = 真直连，不读环境变量
 
     sort_q = f"?reviewsVariantMode=2&sort={sort}"
     for p in range(1, pages + 1):
         rel_path = f"/product/{sku_id}/reviews/{sort_q}" + ("" if p == 1 else f"&page={p}")
         api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
         try:
-            resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=15)
+            resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=15)
             if resp.status_code != 200:
                 break
             data = resp.json()
@@ -471,12 +516,12 @@ def fetch_sku_other_offers(sku_id, creds, proxy=None):
         "Accept": "application/json",
         "Referer": "https://www.ozon.ru/",
     }
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+    proxies = {"http": proxy, "https": proxy} if proxy else {}  # 空 dict = 真直连，不读环境变量
     rel_path = f"/modal/otherOffersFromSellers?product_id={sku_str}&sort=price"
     api_url = f"https://www.ozon.ru/api/entrypoint-api.bx/page/json/v2?url={urllib.parse.quote(rel_path)}"
 
     try:
-        resp = cr.get(api_url, headers=headers, impersonate="chrome124", proxies=proxies, timeout=12)
+        resp = cr.get(api_url, headers=headers, impersonate="chrome146", proxies=proxies, timeout=12)
         if resp.status_code != 200:
             return None
         data = resp.json()
@@ -523,8 +568,47 @@ def fetch_sku_other_offers(sku_id, creds, proxy=None):
         return None
     return None
 
+def extract_pdp_stock_free(page_json):
+    """从 PDP 的 webAddToCart.firstButton.freeRest 取可售库存（无需加购）。
+
+    实测（2026-11-09, SKU 5044498550）：firstButton 含
+      isInCart / toCart / inCart / additionalButton / sku / freeRest /
+      minAddToCartQuantity / inCartQuantity，其中 freeRest=800 即可售库存。
+    """
+    ws = (page_json or {}).get("widgetStates", {})
+    for k, v in ws.items():
+        if k.startswith("webAddToCart"):
+            d = json.loads(v) if isinstance(v, str) else v
+            rest = (d.get("firstButton") or {}).get("freeRest")
+            if rest is not None:
+                return parse_num(rest)
+    return None
+
+
+def fetch_stock_max_via_search(sku_id, title, creds, proxy=None):
+    """用商品标题搜索，从搜索 tile 的 quantityButton.maxItems 取库存上限（无需加购）。
+
+    实测依据（2026-11-09）：
+      - PDP 的 webAddToCart 只有 firstButton，isInCart=false 时同样没有 quantityButton；
+      - maxItems 只出现在搜索/类目 tile 的 multiButton.ozonButton.addToCart.quantityButton；
+      - 纯数字 SKU 作为搜索词会被 Ozon 当作商品 ID 直达 PDP，必须用品名搜索。
+    注意：maxItems 封顶 2000，超过 2000 时无法区分真实库存。
+    """
+    if not sku_id or not title:
+        return None
+    try:
+        j = request_entrypoint_page(f"/search/?text={urllib.parse.quote(title)}", creds, proxy)
+        for it in extract_skus_from_page(j):
+            if str(it.get("sku_id")) == str(sku_id):
+                return it.get("stock_max")
+    except Exception:
+        return None
+    return None
+
+
 def run_collection(keyword=None, sku_inputs=None, out_file="ozon_collected.json",
-                   max_pages=3, max_threads=8, reviews_pages=0, review_sort="usefulness_desc"):
+                   max_pages=3, max_threads=8, reviews_pages=0, review_sort="usefulness_desc",
+                   with_offers=False):
     proxy = detect_proxy()
     print(f"[*] 当前网络代理: {proxy or '直连'}")
 
@@ -592,6 +676,8 @@ def run_collection(keyword=None, sku_inputs=None, out_file="ozon_collected.json"
 
         seller_info = fetch_sku_seller_info(link, creds, proxy)
         if seller_info:
+            if not item.get("title") and seller_info.get("title"):
+                item["title"] = seller_info.get("title")
             item["seller"] = {
                 "id": seller_info.get("seller_id"),
                 "name": seller_info.get("seller_name"),
@@ -604,6 +690,13 @@ def run_collection(keyword=None, sku_inputs=None, out_file="ozon_collected.json"
                 item["promo_sold_pct"] = seller_info.get("promo_sold_pct")
             if seller_info.get("card_price") and item.get("price") is None:
                 item["price"] = seller_info.get("card_price")
+
+        if item.get("stock_max") is None:
+            title = (seller_info or {}).get("title") or item.get("title")
+            if title:
+                item["stock_max"] = fetch_stock_max_via_search(sku_id, title, creds, proxy)
+                if item["stock_max"] is not None:
+                    item["stock_source"] = "search_tile"
 
         if with_offers and sku_id:
             offers = fetch_sku_other_offers(sku_id, creds, proxy=proxy)
