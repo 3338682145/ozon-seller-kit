@@ -66,7 +66,9 @@
 | 403 性质 | **票据级熔断**，换新 cookie 立即恢复（预热成功 + 串行 12 次全 200），无需冷却 | 实测 |
 | 多实例 | 可叠加，双实例 8.3 + 9.9 = 18 页/秒，互不影响 | 实测 |
 | 单请求耗时 | 1.0 s / 154 KB（直连）；走代理退化为 2.1 s | 实测 |
-| cookie 外带 HTTP 客户端 | curl_cffi `firefox133` 指纹 3/3 全 403，**外带不可行** | 见 4.4.2 |
+| cookie 外带 HTTP 客户端 | **可行**：原样 Cookie 头 + 完整浏览器头 + `impersonate="firefox147"` → 200 | 关键在 Cookie 头不可重组，见 4.4.2 |
+| HTTP 通道吞吐 | **60 并发 = 33 页/秒**，420 次中 419 成功（1 次本地 fd 受限） | 实测 |
+| HTTP 通道票据额度 | **>419 次未触顶**，全程零 403 | 实测，上限待测 |
 | 单实例内存 | PSS 780 MB（RSS 累加 1189 MB 高估 1.5 倍），关闭后零残留 | 实测 |
 | 单页 SKU | 36 个（默认排序仅 8 个 tile） | 实测 |
 
@@ -81,7 +83,11 @@ Camoufox 直启（不额外伪装，UA 就是 `X11; Linux x86_64; rv:158.0`）�
 **4.4.2 两条硬约束**
 
 1. **必须直连**。Camoufox 默认继承 `HTTP_PROXY`/`HTTPS_PROXY`（本沙箱 `HIJACK_PROXY_ENABLE=1` 会强制注入），走出去后单请求 1.0 s → 2.1 s、吞吐 9 页/秒 → 0.48 页/秒。launch 必须传 `firefox_user_prefs={"network.proxy.type": 0, "network.proxy.http": "", "network.proxy.ssl": "", "network.proxy.no_proxies_on": "*"}`，并在进程内清空 proxy 环境变量；`proxy={"server": "direct://"}` 不可用（Firefox 报 `NS_ERROR_UNKNOWN_PROXY_HOST`）。
-2. **cookie 不可外带**。同一份 `abt_data` 交给 curl_cffi 一律 403，票据与浏览器会话绑定。采集只能在页内 `fetch`，**HTTP 通道方案作废**（原 4.6 页/秒那条路走不通）。
+2. **cookie 可以外带，但必须原样传 `Cookie` 头**。这是本轮最容易踩错的一处：
+   - 把 9 条 cookie 用 `cookies=dict` 全部塞进请求 → **403**，响应体是带 `challengeURL` 的 incident（`{"incidentId": "fab_chlg_...", "challengeURL": "https://www.ozon.ru/challenge.html?..."}`）。
+   - 原样照抄浏览器实发的 `cookie` 头（约 1371 字符，只含 `__Secure-ETC` + `abt_data`）→ **200 / 160 KB**。
+   - 原因：浏览器在 API 请求上只带该 path 下的 2 条 cookie，`__Secure-access-token` / `__Secure-refresh-token` / `__Secure-user-id` / `xcid` 等不在这个请求上出现。多带即被判定为会话异常。
+   - 正确做法：以 `headers={"cookie": <浏览器实发原串>}` 传入，**不要**用 `cookies=` 参数让库重组；同时照抄 `accept` / `accept-language` / `referer` / `x-o3-app-name` / `x-o3-app-version` / `x-o3-manifest-version` 等全部实发头。TLS 用 `impersonate="firefox147"`（curl_cffi 最高档位）足够，不必精确复刻 158 的 JA3。
 
 **职责边界**
 
@@ -93,13 +99,16 @@ Camoufox 直启（不额外伪装，UA 就是 `X11; Linux x86_64; rv:158.0`）�
 
 **经济账（决定 Worker 数量的关键）**
 
-按单实例 9 页/秒、每票据约 90 页推算：
+HTTP 通道实测 60 并发 = 33 页/秒，票据额度至少 419 次未触顶。按保守值（票据 400 页）推算：
 
-- 每秒需要 `9 / 90 = 0.1` 枚新 cookie，即每 10 s 一枚
-- 单次预热 5.5 s，串行一个预热通道产能 `1/5.5 ≈ 0.18` 枚/秒
-- 结论：**一个串行预热门够用（0.18 > 0.1），有余量**。瓶颈是票据的速率阈值，不是预热速度
+- 一枚票据可支撑 `400 / 33 ≈ 12` 秒
+- 每秒需要 `33 / 400 ≈ 0.083` 枚新 cookie
+- 单次预热 5.5 s，串行一个预热门产能 `1/5.5 ≈ 0.18` 枚/秒
+- 结论：**一个串行预热门够用（0.18 > 0.083），余量一倍以上**。预热门是 Camoufox（780 MB/实例），采集侧是 curl_cffi（几乎不占内存），两者解耦
 
-扩展时按实例算：三实例并行 27 页/秒需要 0.3 枚/秒，两个预热门刚好。**加 Worker 前先加预热门**，否则会撞 90 次/票据的熔断。
+扩展时按实例算：三台采集 Worker 各 60 并发合计 99 页/秒需要 0.25 枚/秒 → 两个预热门刚好。**加 Worker 前先加预热门**。
+
+**票据额度上限尚未测到。** 420 次未触顶，说明 HTTP 通道下的额度远高于页内 fetch 观察到的 90 次——后者很可能是 Firefox 单实例连接数（6 条/域）造成的假象，而非 Ozon 的票据限额。12h 实验要把这个上限打出来，它决定池水位线。
 
 **单票据 90 次这个数必须由 12h 实验复核。** 它决定池水位线，水位线决定预热通道数量，是整条链的根参数。本次只验证了「90–100 次 + 速率阈值」这个量级，长时间低速率下的累积额度未测。
 
