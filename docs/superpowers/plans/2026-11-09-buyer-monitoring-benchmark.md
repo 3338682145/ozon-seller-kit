@@ -16,7 +16,7 @@
 - 数据源优先级：**Kit 的实际源码 + 较新 Kit 数据字典 + 用户已核实的授权限额/脱敏 golden**；`ozon-crawler-local` 只读参考，库存、限速、端点冲突时不采用其断言。
 - `stock_max` = 页面最大可购数代理，不是真实仓储库存；无观察到的目标 SKU 不应记成库存 0。没有真实库存源验证不得计算真实库存/销量差分。
 - 库存请求的基本粒度是**页面上下文 × 观察到的 SKU**；评论按 SKU 获取。不能假定 `/product/{sku}/` 一定能返回列表页 `stock_max`。
-- 线上采集以实测可通的 Cookie 供给方案（Task 0）为前提；`max_rps / max_concurrency / max_requests` 由预检填入源级预算，未核实时先按保守起步值（单 cookie 约 30 次、单进程 20 并发），不因缺省而阻断实验。
+- 线上采集以实测可通的 Cookie 供给方案（Task 0）为前提；`max_rps / max_concurrency / max_requests` 由预检填入源级预算，未核实时先按保守起步值（单票据约 90 次、单实例 10 并发 9 页/秒、仅页内 fetch），不因缺省而阻断实验。
 - Cookie 供给是硬前置：**允许** CDP 无头预热获取挑战令牌、池内按失效标记轮换、过期后重新预热；**禁止**代理或出口 IP 轮换（用户已多次明确否决）、伪造跨账号身份、对同一失效身份无限重试。403/429/挑战先对该票据熔断并标 dead，再从池里取下一枚——换的是同一身份池里的过期票据，不是造新身份。详见 spec 4.4。
 - 12 小时是**测试持续时间**，不是保证的采集量；本轮只用单个测试进程，5 Worker 规模与 ClickHouse 正式数据模型留后续。
 - 原始评价/图片可能涉及用户内容，遵守授权/数据最小化与保留期；运行日志不得含 URL token、Cookie、账号信息、完整响应或个人信息。
@@ -48,7 +48,7 @@
 
 | 路径 | 责任 |
 |---|---|
-| `collector/benchmark/cookie_supply.py`、`fingerprint.py` | Cookie 供给门与机型池；所有在线任务的硬前置 |
+| `collector/benchmark/cookie_supply.py`、`fingerprint.py` | Cookie 供给门与 Camoufox 直连启动参数；所有在线任务的硬前置 |
 | `docs/superpowers/evidence/buyer-source-matrix.md` | Kit 与 crawler-local 冲突裁决、合同/证据状态 |
 | `samples/benchmark/buyer_inventory_page.json`、`buyer_reviews_widget.json` | 去敏可公开的合成/获准 golden 示例 |
 | `collector/benchmark/contracts.py`、`outcomes.py` | 规范记录与响应结果分类 |
@@ -67,29 +67,30 @@
 
 **Files:**
 - Create: `collector/benchmark/cookie_supply.py`
-- Create: `collector/benchmark/fingerprint.py`（机型池，vendored 自 `ozon-cookie-harvester` 的 `ozon_cookie/profiles.py`）
+- Create: `collector/benchmark/fingerprint.py`（Camoufox 启动参数与直连 prefs 常量，**不再是机型池伪装**）
 - Create: `tests/test_cookie_supply.py`
 
 **Interfaces:**
-- `CookieSupply.mint(profile_hint: str | None) -> Session`：裸起 Chromium，CDP 四项同批下发，过挑战后导出 cookie。
+- `CookieSupply.mint() -> Session`：Playwright 直启 Camoufox 二进制，过挑战后导出 cookie。**不再有 `profile_hint`**——机型伪装已被实测证伪。
 - `CookieSupply.lease() -> Session`（least-used）、`mark_dead(session_id)`、`replenish(watermark: int)`。
-- `Session(id, cookie_header, ua, impersonate, profile_id, minted_at, use_count, state)`。
-- 机型参数复用 `profiles.pick()` / `cdp_override()` / `emulation_metrics()`，不在这里另写一套指纹逻辑。
+- `Session(id, cookie_header, ua, minted_at, use_count, state)`。去掉 `impersonate` / `profile_id`：cookie 外带给 HTTP 客户端一律 403，这两个字段没有下游。
 
-**Technical constraints（全部来自实测，不要改）:**
-- 必须 `connect_over_cdp` 挂载裸起实例；框架自启浏览器会被判自动化并直接 403。
-- headless 可用，但前提是 `Network.setUserAgentOverride` 的 `userAgent`、`acceptLanguage`、`platform`、`userAgentMetadata` **四项同批下发**。只设 UA 字符串会让 `sec-ch-ua-platform` 仍报宿主真实平台，形成「页面说 Mac、请求头说 Linux」的矛盾。
-- **不带任何 proxy 参数**，加 `--no-proxy-server`，并确认环境里没有残留 `HTTP_PROXY` / `HTTPS_PROXY`。用户已多次否决代理。
-- 早停判据：`abt_data` 长度 ≥ 580、连续两次不变、且页面 URL 含 `abt_att=1`。只看长度会拿到半成品，下游用它会 403。
-- 内存估算用 PSS 不累加 RSS；单实例约 500 MB。
+**Technical constraints（全部来自 2026-11-10 实测，不要改）:**
+- **引擎必须是 Camoufox（真 Firefox 158）**。Chromium 的 headless / headful / incognito / 指纹伪装四模式结果完全一致：cookie 0、无 `abt_data`、页内 API 403，落点都是俄语错误页。改 UA / platform / Client Hints 不动任何变量——被检测的是引擎，不是 UA。
+- 直启二进制：`p.firefox.launch(executable_path=<camoufox-bin>, headless=True, firefox_user_prefs=DIRECT_PREFS)`。**不要**用 `camoufox` python 包的 `Camoufox()` 封装：它启动时强制调用 GitHub API 校验 release，限流时直接拒绝启动（本机已踩）。
+- `DIRECT_PREFS = {"network.proxy.type": 0, "network.proxy.http": "", "network.proxy.ssl": "", "network.proxy.share_proxy_settings": False, "network.proxy.no_proxies_on": "*"}`，并在进程内 `os.environ.pop` 掉 `HTTP_PROXY/HTTPS_PROXY/http_proxy/https_proxy/ALL_PROXY/all_proxy`。本沙箱 `HIJACK_PROXY_ENABLE=1` 会强制注入，不清理则单请求 1.0 s → 2.1 s、吞吐 9 页/秒 → 0.48 页/秒（已实测）。`proxy={"server": "direct://"}` 不可用，Firefox 报 `NS_ERROR_UNKNOWN_PROXY_HOST`。
+- 预热两步：首页 `wait_until="commit"` → 等 3 s（挑战自动完成，`/abt/result` 返 200）→ 搜索页 `domcontentloaded` → 等 2.5 s。合计约 5.5 s。
+- 早停判据：`abt_data` 存在且长度 ≥ 300，且页面 URL 含 `abt_att=1`。
+- 内存估算用 PSS 不累加 RSS；单实例约 780 MB（RSS 累加约 1189 MB，高估 1.5 倍）。
+- **cookie 不可外带**：同一份 `abt_data` 交给 curl_cffi `firefox133` 三次全 403。采集只能在浏览器页内 `fetch`，不要为 HTTP 通道写适配。
 
-- [ ] **Step 1: Write failing tests.** 池空时 `lease()` 抛错而**不**自动 mint（避免隐式开浏览器）；连续 lease 取 least-used；`mark_dead` 后该 session 不再被租出且计数不清零；`replenish(watermark)` 补齐到水位；序列化后的事件里不出现 `cookie_header` 明文；`fingerprint.audit()` 能拦下跨机型拼出来的组合。
+- [ ] **Step 1: Write failing tests.** 池空时 `lease()` 抛错而**不**自动 mint（避免隐式开浏览器）；连续 lease 取 least-used；`mark_dead` 后该 session 不再被租出且计数不清零；`replenish(watermark)` 补齐到水位；序列化后的事件里不出现 `cookie_header` 明文；`DIRECT_PREFS` 常量断言 `network.proxy.type == 0`；mint 产出的 session 必须带 `abt_data`。
 - [ ] **Step 2: Run** `pytest -q tests/test_cookie_supply.py`，确认 FAIL。
-- [ ] **Step 3: Implement.** 预热走 CDP；cookie 只持久化 `cookie_header` 与元数据，不保留浏览器 profile 目录；403 归因用单请求探针 + 约 100 s 冷却，区分「票据过期」与「瞬时并发挤占」；`30 次额度` 作为可配置常量，实验结束后按实测值调整。
+- [ ] **Step 3: Implement.** 预热走 Camoufox 直启；cookie 只持久化 `cookie_header` 与元数据，不保留浏览器 profile 目录；403 即熔断该票据、取池内下一枚（**不再等 100 s 冷却**，实测新 cookie 立即恢复）；连续 3 枚被拒才升级为 IP 层怀疑并停源；`90 次额度` 与 `10 并发` 作为可配置常量，实验结束后按实测值调整。
 - [ ] **Step 4: Run** `pytest -q tests/test_cookie_supply.py`，确认 PASS。
 - [ ] **Step 5: Commit** `git add collector/benchmark/cookie_supply.py collector/benchmark/fingerprint.py tests/test_cookie_supply.py && git commit -m "feat: add cookie supply gate as V2 procurement prerequisite"`。
 
-**验收**：`python -m collector.benchmark.cookie_supply --mint-once` 在 5 s 内产出一枚可用 session，且任何日志文件里搜不到 cookie 明文。
+**验收**：`python -m collector.benchmark.cookie_supply --mint-once` 在 6 s 内产出一枚可用 session（预热 5.5 s + 余量），且任何日志文件里搜不到 cookie 明文。
 
 ---
 
@@ -146,7 +147,7 @@
 - Produces `require_live_authorization(policy: BenchmarkPolicy) -> None`; when mode=live and explicit verified policy fields are absent, raises `PolicyViolation`.
 - Produces `BudgetLimiter.acquire(source_id: str, *, clock) -> Permit` and `BudgetLimiter.release(permit: Permit) -> None`, recording wait and refusal reason.
 
-- [ ] **Step 1: Write failing tests**: 缺预算时回落到保守起步值（单进程 20 并发、单 cookie 30 次、HTTP 4.6 页/秒）而非直接拒绝；`cookie_watermark < 1` 或 `cookie_max_uses < 1` 被拒；离线完全不触网；单个票据 403/429 触发**该票据**熔断而非整源停机；不因失败自动提速；库存与评论策略各自独立、不共享预算。同时加入 fake-clock 用例：`test_rps_and_burst_enforced`、`test_run_and_daily_budget_block`、`test_shared_budget_across_tasks`、`test_review_inventory_limits_are_isolated`、`test_retries_consume_budget`。
+- [ ] **Step 1: Write failing tests**: 缺预算时回落到保守起步值（单实例 10 并发、单票据 90 次、仅页内 fetch）而非直接拒绝；`cookie_watermark < 1` 或 `cookie_max_uses < 1` 被拒；离线完全不触网；单个票据 403/429 触发**该票据**熔断而非整源停机；不因失败自动提速；库存与评论策略各自独立、不共享预算。同时加入 fake-clock 用例：`test_rps_and_burst_enforced`、`test_run_and_daily_budget_block`、`test_shared_budget_across_tasks`、`test_review_inventory_limits_are_isolated`、`test_retries_consume_budget`。
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_policy.py` to FAIL.
 - [ ] **Step 3: Implement** validation and typed policy. YAML examples contain **no guessed numerical online limits**; online values must be copied from Kit evidence + verified licensed policy, with `authorized: false` by default. Single-process budget ledger uses monotonic time and one shared permit per source; any retries/failed attempts count. Shared Redis permit (`collector/rate_limit/distributed.py`) requires separate integration tests before multiple processes; no implicit five-worker experiment.
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_policy.py` to PASS.
@@ -166,7 +167,7 @@
 
 - [ ] **Step 1: Write failing tests**: 8 inventory tiles contains only requested 3 SKUs → 3 observations with page provenance; absent desired SKU → no invented zero; valid reviews widget maps 2 records; invalid review scores/missing IDs flagged; schema-version drift produces validation issue rather than success; wrong/missing widget → `empty_suspect`, not empty success; no network is attempted by fixtures.
 - [ ] **Step 2: Run** `pytest -q tests/test_buyer_adapters.py` and confirm FAIL.
-- [ ] **Step 3: Implement** adapters wrapping Kit `extract_skus_from_page` / `parse_reviews`。会话由 Task 0 的 `CookieSupply` 注入，这里不直接调用 `BuyerClient.ensure_creds`、`PoolClient`、`cdp_warmup`。如果导入旧解析器需要 `curl_cffi`，就加进显式 optional extra 而不是依赖全局安装；验证导入不触发网络。Transport 边界保持显式：Fake/OfflineTransport 永远可用；在线 HTTP Transport **借用 session 的 `impersonate` 档位**（TLS 与 UA 版本对齐是必须的，不算伪造身份）、**跟随重定向**（搜索页 302 → `page_changed=true` 是正常行为，`allow_redirects=False` 会误判成 0 字节失败）、不自行解挑战（挑战由供给门负责）、不轮换代理或身份。某票据 403 就结束该 session 并向池申请下一枚，不重试同一枚。Kit 失败时不静默 fallback 到 crawler-local 的端点。
+- [ ] **Step 3: Implement** adapters wrapping Kit `extract_skus_from_page` / `parse_reviews`。会话由 Task 0 的 `CookieSupply` 注入，这里不直接调用 `BuyerClient.ensure_creds`、`PoolClient`、`cdp_warmup`。如果导入旧解析器需要 `curl_cffi`，就加进显式 optional extra 而不是依赖全局安装；验证导入不触发网络。Transport 边界保持显式：Fake/OfflineTransport 永远可用；**在线采集只能在 Camoufox 页内 `fetch`**（2026-11-10 实测：同一份 `abt_data` 交给 curl_cffi `firefox133` 三次全 403，票据与会话绑定），因此不设计 `impersonate` 档位、不写 HTTP 通道；页内 fetch 自带重定向跟随（搜索页 302 → `page_changed=true` 是正常行为）；不自行解挑战（挑战由供给门负责）、不轮换代理或身份。某票据 403 就结束该 session 并向池申请下一枚，不重试同一枚。Kit 失败时不静默 fallback 到 crawler-local 的端点。
 - [ ] **Step 4: Run** `pytest -q tests/test_buyer_adapters.py` to PASS.
 - [ ] **Step 5: Commit** `git add collector/benchmark/adapters.py tests/test_buyer_adapters.py pyproject.toml && git commit -m "feat: isolate buyer inventory and review sample adapters"`.
 
@@ -243,7 +244,7 @@
 
 ## Preflight Gate for Actual 12h Online Run
 
-- [ ] 确认 Cookie 供给门能稳定产出会话：连续 20 次 mint 无失败、单次 ≤ 5 s、日志无 cookie 明文。填入库存源源级预算：`max_rps` / `max_concurrency` / `max_requests` / `cookie_watermark` / `cookie_max_uses`。预算空缺时用保守起步值（20 并发、单 cookie 30 次）并在报告里标 `estimated`。
+- [ ] 确认 Cookie 供给门能稳定产出会话：连续 20 次 mint 无失败、单次 ≤ 5 s、日志无 cookie 明文。填入库存源源级预算：`max_rps` / `max_concurrency` / `max_requests` / `cookie_watermark` / `cookie_max_uses`。预算空缺时用保守起步值（10 并发、单票据 90 次、9 页/秒）并在报告里标 `estimated`。
 - [ ] 同样为**评论源**独立提供上述政策；不共享或继承库存源预算。
 - [ ] 基于 Kit 正确版本的人工审阅通过，确认源矩阵中无未经裁决的关键字段/端点冲突；`ozon-crawler-local` 的任何限速、库存结论不进入批准的在线参数。
 - [ ] 运行时日志脱敏、轮转/留存清理、终态事件与 15 分钟汇总对账、字段验证、PG/MinIO 真实写入、告警发送链路、CPU/内存/磁盘空间和人工急停已验证。
